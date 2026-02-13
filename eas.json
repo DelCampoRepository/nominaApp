@@ -1,0 +1,22 @@
+{
+  "cli": {
+    "version": ">= 3.0.0"
+  },
+  "build": {
+    "preview": {
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease",
+        "cache": {
+          "key": "gradle-node-modules-cache",
+          "paths": ["node_modules", "android/.gradle"]
+        }
+      }
+    },
+    "production": {
+      "android": {
+        "buildType": "app-bundle"
+      }
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "Nomina-app",
+    "slug": "Nomina-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/delcamp.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/delcamp.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+      
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/delcamp.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.joserrestre.qrscanner"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "e07e83fa-dbe1-4821-a6ae-7d3565ec462c"
+      }
+    },
+    "plugins": [
+      "expo-font",
+      "expo-asset",
+      "expo-sqlite"
+    ]
+  }
+}
