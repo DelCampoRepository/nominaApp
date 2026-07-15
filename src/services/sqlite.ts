@@ -6,14 +6,14 @@ import { IAvanceEmpleado } from "../interfaces/local/IAvanceEmpleado";
 import { iNaveSeleccionada } from "../interfaces/local/INaveSeleccionada";
 import { IdatosEmpleadoNoInternet } from "../interfaces/local/IDatosUsuarioNoInternet";
 import { IdatosActividadesNaves } from "../interfaces/local/IdatosActNave";
-import dayjs from "dayjs";
+import dayjs = require("dayjs");
 import { IEmpleadoCapturado } from "../interfaces/local/IEmpleadoCapturado";
 import { Alert } from "react-native";
 let db: SQLite.SQLiteDatabase | null = null;
 
  export async function getDB() {
   if (!db) {
-    db = await SQLite.openDatabaseAsync("MiBD103.db");
+    db = await SQLite.openDatabaseAsync("MiBD195.db");
     console.log("📂 Base de datos abierta correctamente");
   }
   return db;
@@ -42,6 +42,27 @@ export async function initDB() {
       UNIQUE(cod_lote, cod_actividad, cod_avance)
     );
  
+      CREATE TABLE IF NOT EXISTS TablaActividadesSecundarias (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      cod_lote TEXT,
+      nom_actividad TEXT,
+      cod_actividad TEXT,
+      cod_avance TEXT,
+      Rendimiento_Aplic NUMERIC,
+      Rendimiento_Tope NUMERIC,
+      Rendimiento_Presup NUMERIC,
+      salario_jornal_base NUMERIC,
+      salario_jornal_extra NUMERIC,
+      Cod_unidad TEXT,
+      Nom_unidad TEXT,
+      Nom_Corto TEXT,
+      selecionado INTEGER DEFAULT 0,
+      fechaSeleccion TEXT,
+      UNIQUE(cod_lote, cod_actividad, cod_avance)
+    );
+ 
+
+
     CREATE TABLE IF NOT EXISTS actividadesEnNaves(
       id INTEGER PRIMARY KEY AUTOINCREMENT,
         cod_lote TEXT, 
@@ -113,6 +134,14 @@ export async function initDB() {
         UNIQUE (token,user,semana_actual)
     );
     
+ CREATE TABLE IF NOT EXISTS tablajefesNave (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+        Cod_jefe_nave TEXT,
+        NombreJefeNave  TEXT,
+        UNIQUE (Cod_jefe_nave)
+    );
+
+
       CREATE TABLE IF NOT EXISTS tablaEmpleadosSeleccionados (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
         cod_empleado TEXT,
@@ -177,6 +206,11 @@ export async function initDB() {
 
 import {IAvancesNomina, IAvanceUI} from "../interfaces/IAvancesNomina";
 
+import { IJefeNave } from "../interfaces/local/IJefeNave";
+import { IMainActividades } from "../interfaces/local/IMainActividades";
+import { fecha } from "../utils/GenerarFecha";
+import { IActividadesAvancesSeleccionables } from "../interfaces/local/iActividadesAvancesSeleccionables";
+
 
  export async function existeAvanceEnSQLite (
   avance: IAvancesNomina,
@@ -214,7 +248,7 @@ import {IAvancesNomina, IAvanceUI} from "../interfaces/IAvancesNomina";
     ]
   );
   
-  console.log('resultado verificacion', result)
+  //console.log('resultado verificacion', result)
  
    if (result.existe === 1) {
     return true;
@@ -226,6 +260,57 @@ import {IAvancesNomina, IAvanceUI} from "../interfaces/IAvancesNomina";
     Alert.alert('', error.message)
   }
 };
+
+
+export async function SeleccionarJefesNaves() {
+    try{
+
+      const database = await getDB();
+      
+      const avances = await database.getAllAsync(`SELECT * FROM tablajefesNave`);
+      return avances as  any[];
+
+    }catch(error: any){
+      
+    }
+}
+
+export async function guardarListajefesNave(
+  listaJefes: IJefeNave[]
+) {
+
+  try{
+
+     
+   const database = await getDB();
+   
+  for (let jefe of listaJefes) {
+
+    await database.runAsync(
+      `INSERT OR REPLACE  INTO tablajefesNave
+      (
+       Cod_jefe_nave,
+       NombreJefeNave
+       )
+      VALUES (?, ?)`,
+      [
+        jefe.Cod_jefe_nave,
+        jefe.NombreJefeNave,
+      ]
+    );
+    
+  }
+ 
+
+    return true;
+  }catch(eror:any){
+    Alert.alert('', eror.message)
+    console.log("Actividades  no se guardo en SQLite");
+    return false;
+  }
+}
+
+
 
 export async function insertarAvanceSQLite  (
   avances: IAvanceUI[],
@@ -306,33 +391,50 @@ export async function SeleccionarAvancesNomina() {
     }
 }
 
-export async function GuardarActEnNaves(codLote : string, fecha : string, semana: string  ) {
 
-  try{
-    
-    
+export async function GuardarActEnNaves(
+  codLote: string,
+  fecha: string,
+  semana: string
+) {
+  try {
+
     const database = await getDB();
 
-     const datos : any = await database.getAllAsync(
-          `SELECT  
-          A.cod_lote, 
-          A.cod_actividad, 
-          A.cod_avance, 
-          A.nom_actividad, 
-          B.cod_nave, 
-          B.Descripcion_nave,  
-          0 AS seleccionado,
-          ? AS fecha,
-          ? AS semanaActiva
-          from listaActividadesPrincipales A   INNER JOIN 
-           listaDeNavesxUsuario B ON A.cod_lote = B.cod_lote   WHERE A.cod_lote  = ? AND A.selecionado = ?`, [fecha, semana,codLote,  1]
-        );
+   
+    await database.runAsync(
+      `DELETE FROM actividadesEnNaves
+       WHERE cod_lote = ?
+       AND fecha = ?
+       AND semanaActiva = ?`,
+      [codLote, fecha, semana]
+    );
 
-        console.log(datos)
-      for (let actividad of datos) {
-        const data = await database.runAsync(
-          `INSERT OR REPLACE  INTO actividadesEnNaves
-          (
+    const datos: any = await database.getAllAsync(
+      `SELECT  
+        A.cod_lote, 
+        A.cod_actividad, 
+        A.cod_avance, 
+        A.nom_actividad, 
+        B.cod_nave, 
+        B.Descripcion_nave,  
+        0 AS seleccionado,
+        ? AS fecha,
+        ? AS semanaActiva
+      FROM listaActividadesPrincipales A
+      INNER JOIN listaDeNavesxUsuario B 
+        ON A.cod_lote = B.cod_lote
+      WHERE 
+        A.cod_lote = ? 
+        AND A.selecionado = ?`,
+      [fecha, semana, codLote, 1]
+    );
+
+    for (let actividad of datos) {
+
+      await database.runAsync(
+        `INSERT OR REPLACE INTO actividadesEnNaves
+        (
           cod_lote , 
           cod_actividad , 
           cod_avance , 
@@ -342,8 +444,8 @@ export async function GuardarActEnNaves(codLote : string, fecha : string, semana
           seleccionado,
           fecha,
           semanaActiva
-          )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?,?)`,
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           actividad.cod_lote,
           actividad.cod_actividad,
@@ -356,14 +458,16 @@ export async function GuardarActEnNaves(codLote : string, fecha : string, semana
           actividad.semanaActiva
         ]
       );
-      console.log(data.changes)
-      }
-    console.log('actividades en nave guardadas ')
+
+    }
+
     return true;
-  }catch(error: any)
-  {
-      console.log(error.message)
-      return false;
+
+  } catch (error: any) {
+
+    console.log(error.message);
+    return false;
+
   }
 }
 
@@ -387,13 +491,13 @@ export async function BuscarEmpleadoPorCodigo(codEmpleado: string) {
   
 }
 
-export async function SeleccionarActEnNaves(codLote: string, codNave:string, fecha: string,semana : string) {
+export async function SeleccionarActEnNaves(codLote: string, codNave:string, fecha: string,semana : string) :Promise<IdatosActividadesNaves[]>{
     try{
 
         const database = await getDB();
        
 
-        console.log(codLote)
+      
         const datos = await database.getAllAsync(
           `SELECT   
           cod_lote , 
@@ -409,7 +513,7 @@ export async function SeleccionarActEnNaves(codLote: string, codNave:string, fec
           `,[codLote, codNave, fecha, semana]
         );
 
-        console.log('lista',datos)
+       // console.log('lista',JSON.stringify(datos, null,2))
         return datos as  any[];
   }
   catch(error: any)
@@ -421,13 +525,13 @@ export async function SeleccionarActEnNaves(codLote: string, codNave:string, fec
   
 }
 
-export async function actualizarActEnNave(ActivdadesNave: iNaveSeleccionada []) {
+export async function actualizarActEnNave(ActivdadesNave: IdatosActividadesNaves []) {
    try{
       const database = await getDB();
   
-      
+       console.log("asdasd")
       for (let nave of ActivdadesNave) {
-     
+      console.log("sss")
      const res = await database.runAsync( 
         `UPDATE  actividadesEnNaves SET seleccionado = ? WHERE  
         cod_lote = ? AND 
@@ -443,11 +547,9 @@ export async function actualizarActEnNave(ActivdadesNave: iNaveSeleccionada []) 
           nave.cod_nave,
           nave.cod_actividad,
           nave.cod_avance,
-          nave.des_actividad,
+          nave.nom_actividad,
           nave.semanaActiva,
-          nave.fecha
-         
-          
+          nave.fecha   
         ]
       );
 
@@ -527,6 +629,8 @@ export async function BorraroRegistrosTodasLasTablas() {
   
   console.log('Se limpiaron todas las tablas ');
 }
+
+
 
 export async function GuardarEmpleadosCapturados(dataEmpleados: IEmpleadoCapturado []) {
 
@@ -828,13 +932,12 @@ export async function GuardarActividadesEnNave(ActivdadesNave: iNaveSeleccionada
   }
 }
 
-export async function SeleccionarActividadesNave(codLote : string, codNave : string, semana: string) {
+export async function SeleccionarActividadesNave(codLote : string, codNave : string, semana: string):Promise<IActividadesAvancesSeleccionables[]>{
     try{
-  const fecha = dayjs().format("YYYY-MM-DD");
+  
 const database = await getDB();
 
-console.log(codLote,codNave,semana,fecha)
-  const ListaEmpleadosFiltrados = await database.getAllAsync(
+  const ListaEmpleadosFiltrados = await database.getAllAsync<IActividadesAvancesSeleccionables>(
     `SELECT DISTINCT 
       A.cod_lote,
       A.cod_nave,
@@ -847,7 +950,6 @@ console.log(codLote,codNave,semana,fecha)
       A.seleccionado,
       B.Rendimiento_Aplic,
       B.Rendimiento_Tope,
-      B.Rendimiento_Aplic,
       B.Nom_Corto
       FROM actividadesEnNaves A INNER JOIN listaActividadesPrincipales B 
       ON A.cod_actividad = B.cod_actividad AND A.cod_avance = B.cod_avance AND A.cod_lote = B.cod_lote
@@ -855,7 +957,7 @@ console.log(codLote,codNave,semana,fecha)
   );
 
 
-  return ListaEmpleadosFiltrados as IAvanceEmpleado [];
+  return ListaEmpleadosFiltrados;
   }
   catch(error: any)
   {
@@ -935,10 +1037,9 @@ export async function ActualizarAvances(listaEmpleadosAsentar: IAvanceEmpleado [
   try{
       const database = await getDB();
      
-      
   for (let empleado of listaEmpleadosAsentar) {
    
-type ExisteResult = { existe: number };
+    type ExisteResult = { existe: number };
    
     const res =   await database.getAllAsync<ExisteResult>(`
       SELECT EXISTS(SELECT 1 FROM tablaAvances WHERE
@@ -986,13 +1087,6 @@ type ExisteResult = { existe: number };
         empleado.cod_empleado,
         empleado.semanaActiva,
         empleado.fecha
-    
-       
-       
-       
-       
-    
-       
       ]
     );
  console.log('Empleados actualizados')
@@ -1267,11 +1361,11 @@ export async function guardarListaActividadesxLote(
   }
 }
 
-export async function obtenerActividadesxLoteLocales(cod_lote:string) {
+export async function obtenerActividadesxLoteLocales(cod_lote:string) :Promise<IMainActividades[]>{
 
 try{
      const database = await getDB();
-  const result = await database.getAllAsync(
+  const result = await database.getAllAsync<IMainActividades>(
     `SELECT DISTINCT cod_actividad,  RTRIM(nom_actividad) as nom_actividad FROM listaActividadesPrincipales WHERE cod_lote = ?  AND  cod_avance = ?`,[cod_lote, '000']
   );
  
@@ -1279,18 +1373,26 @@ try{
 }
 catch(error : any){
     Alert.alert('', error.message)
+    return [];
 }
 
 }
 
-export async function obtenerActividadesxLoteSecundariasLocales(cod_lote:string, cod_actividad: string) {
+export async function obtenerActividadesxLoteSecundariasLocales(cod_lote:string, cod_actividad: string): Promise<ISecundaryActividades[]> {
    
   
   try{
 
      const database = await getDB();
-  const result = await database.getAllAsync(
-    `SELECT DISTINCT  cod_actividad, cod_avance, nom_actividad, selecionado FROM listaActividadesPrincipales  WHERE cod_lote = ? AND cod_actividad = ?  AND cod_avance <> '000'`, [cod_lote, cod_actividad]
+  const result = await database.getAllAsync<ISecundaryActividades>(
+    `SELECT DISTINCT  
+    cod_actividad, 
+    cod_avance, 
+    nom_actividad, 
+    selecionado 
+    FROM listaActividadesPrincipales  
+    WHERE cod_lote = ? AND cod_actividad = ?  AND cod_avance <> '000'`,
+    [cod_lote, cod_actividad]
   );
   return result;
   }
@@ -1331,14 +1433,15 @@ const database = await getDB();
 export async function  actualizar(cod_lote:string, listaActividadesSec:  ISecundaryActividades []  ) {
   
    const database = await getDB();
-      console.log(cod_lote,'antes del update');
+    
   try{
+
+//console.log(JSON.stringify(listaActividadesSec,null,2))
  for (let actividad of listaActividadesSec) {
-    
-   
-    
   const res=   await database.runAsync(
-      `UPDATE listaActividadesPrincipales SET selecionado = ? WHERE cod_lote = ? and cod_actividad = ? and cod_avance = ?`,
+      `UPDATE listaActividadesPrincipales 
+        SET selecionado = ? 
+        WHERE cod_lote = ? AND cod_actividad = ? AND cod_avance = ?`,
       [
         actividad.selecionado,
         cod_lote,
@@ -1347,15 +1450,15 @@ export async function  actualizar(cod_lote:string, listaActividadesSec:  ISecund
       ]
     );
    
-    console.log('actualizados',res.changes)
+    //console.log('actualizados',res.changes)
   }
 
    const res2=   await database.getAllAsync(
       `SELECT * FROM listaActividadesPrincipales WHERE selecionado = ?`, [1]
     );
    
-    console.log('actualizados',res2)
-  
+    
+//console.log(JSON.stringify(res2,null,2))
     return true
 
   }catch(error :any)

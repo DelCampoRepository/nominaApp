@@ -17,7 +17,7 @@ try{
      }
         
       const resp = await api.post<ILoginResponse>('/Empleado/ValidaUsuario',usuarioHash); 
-       console.log(resp.data)
+    
       if (resp.status === 200) {
       
       return resp.data;

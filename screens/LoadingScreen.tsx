@@ -208,6 +208,7 @@ const styles = StyleSheet.create({
   },
   image: {
     width: 50,
-    height: 50
+    height: 50,
+    tintColor:"#13c044"
   }
 });

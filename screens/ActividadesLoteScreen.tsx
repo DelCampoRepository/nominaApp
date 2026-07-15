@@ -411,6 +411,8 @@ export default function ActividadesLoteScreen({ navigation }: Props) {
   );
 }
 
+
+
 const styles = StyleSheet.create({
   container: {
     flex: 1, // ocupa toda la pantalla

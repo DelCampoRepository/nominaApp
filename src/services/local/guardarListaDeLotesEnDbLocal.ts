@@ -1,5 +1,6 @@
 import { Alert } from 'react-native';
 import { getDB } from '../sqlite';
+import { IListaLotesxUsuario } from '../../interfaces/local/IListaLotesxUsuario';
 
 
 
@@ -31,18 +32,20 @@ export async function verificarTablas() {
 
 
 
-export async function obtenerListaLotesxUsuarioSqLite() {
+export async function obtenerListaLotesxUsuarioSqLite(): Promise<IListaLotesxUsuario[]> {
 
  try{
     const database = await getDB();
  
-    const result = await database.getAllAsync(
+    const result = await database.getAllAsync<IListaLotesxUsuario>(
     `SELECT DISTINCT cod_lote,  RTRIM(nom_lote) as nom_lote FROM listaDeLotesxUsuario`
     );
     return result;
+
  }catch(error : any){
 
   Alert.alert("Error" ,error.message);
+  return [];
  }
 }
 

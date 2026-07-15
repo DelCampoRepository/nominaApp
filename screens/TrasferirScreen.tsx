@@ -36,7 +36,8 @@ import {
   obtenerSemanaActivaSqLite,
   ActualizarAvancesSincro,
   Seleccionarllenado,
-  SeleccionarDatosUsuario
+  SeleccionarDatosUsuario,
+  guardarListajefesNave
 } from "../src/services/sqlite";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { IRespuestaTransferenciaCat } from "../src/interfaces/IRespuestaTransferenciaCat1";
@@ -51,6 +52,7 @@ type Props = NativeStackScreenProps<RootStackParamList, "Transferir">;
 import { obtenerListaDeActividadesPorUsuario } from "../src/services/ObtenerActividadesxLote";
 import { useUser } from "../src/context/userContext";
 import dayjs from "dayjs";
+import { obtenerJefesNave } from "../src/services/ObtenerJefesNave";
 type ListaOpciones = {
   key: number;
   label: string;
@@ -101,6 +103,13 @@ export default function TransferirScreen({ navigation }: Props) {
       selec: 0,
       sincro: false,
       icono: require("../assets/sprout.png")
+    },
+    {
+      nombre: "Jefes de naves",
+      index: 6,
+      selec: 0,
+      sincro: false,
+      icono: require("../assets/account-cowboy-hat.png")
     },
     {
       nombre: "Avances",
@@ -399,12 +408,49 @@ export default function TransferirScreen({ navigation }: Props) {
                 );
               }
 
-              break;
+              
             }
-        }
+            break;
+        
+                 case 6:
+            const jefes = await obtenerJefesNave({
+              idu_usuario: String(iduUsuario)
+            });
+
+            if (jefes.jefesDeNave.length === 0) {
+              Alert.alert("Error", "No hay jefes de nave para este usuario");
+            }
+            const ValidarGuardardoJefesNave = await guardarListajefesNave(
+              jefes.jefesDeNave
+            );
+            if (ValidarGuardardoJefesNave) {
+              Alert.alert("", "Jefes sincronizados");
+              setBotones((prev) =>
+                prev.map((b) =>
+                  b.index === botonSele.index
+                    ? { ...b, sincro: b.sincro === true ? false : true }
+                    : b
+                )
+              );
+            } else {
+              Alert.alert("Error", "No se pudo actualizar lista de lotes");
+              setBotones((prev) =>
+                prev.map((b) =>
+                  b.index === botonSele.index
+                    ? { ...b, selec: b.selec === 1 ? 0 : 1 }
+                    : b
+                )
+              );
+            }
+
+            break;
+          
+          }
       }
     }
   };
+
+  
   return (
     <Animated.View style={[styles.AnimatedView, { opacity: fadeAnimInputs }]}>
       <SafeAreaView>
@@ -445,7 +491,7 @@ export default function TransferirScreen({ navigation }: Props) {
                 }}
               >
                 <Avatar.Icon
-                  color="black"
+                  color="#13c044"
                   style={{ backgroundColor: "", paddingLeft: 0 }}
                   size={40}
                   icon={boton.icono}
@@ -473,7 +519,7 @@ export default function TransferirScreen({ navigation }: Props) {
                 {boton.sincro ? (
                   <ActivityIndicator
                     animating={true}
-                    color={MD2Colors.green800}
+                    color={"#13c044"}
                   />
                 ) : (
                   <IconButton
@@ -512,7 +558,7 @@ export default function TransferirScreen({ navigation }: Props) {
               icon=""
               mode="contained"
               onPress={handleActualizar}
-              style={{ backgroundColor: "green" }}
+              style={{ backgroundColor: "#13c044" }}
             >
               Actualizar
             </Button>

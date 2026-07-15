@@ -31,8 +31,8 @@ export default function LoginScreen({ navigation }: Props) {
   const { handleLogin, loading, error } = useLogin();
 
   const [datosUsuario, setDatosUsuario] = useState({
-    username: "",
-    password: ""
+    username: "nomina_sanluis",
+    password: "delcampo"
   });
   const { login, logout } = useContext(AuthContext);
   const { setNombreUsuario, setIduUsuario } = useUser();
@@ -54,9 +54,10 @@ export default function LoginScreen({ navigation }: Props) {
         const fechaExpiracion = new Date(datos[0].expiration);
 
         const fechaActual = new Date();
-        console.log("Fecha Expiracion:", fechaExpiracion);
-        console.log("Fecha Actual:", fechaActual);
-        if (fechaActual > fechaExpiracion) {
+          console.log("Fecha Expiracion:", fechaExpiracion.toLocaleDateString());
+          console.log("Fecha Actual:", fechaActual.toLocaleDateString());
+        if (fechaActual.toLocaleDateString() !== fechaExpiracion.toLocaleDateString()) {
+            console.log(0)
           Alert.alert(
             "",
             `el dia ha cambiado, se borraran los avances ${fechaActual} > ${fechaExpiracion}`
@@ -93,6 +94,7 @@ export default function LoginScreen({ navigation }: Props) {
             });
           }
         } else if (datos[0].user !== datosUsuario.username) {
+          
           await logout();
           const respuesta = await handleLogin({
             nomCorto: datosUsuario.username,
@@ -122,7 +124,16 @@ export default function LoginScreen({ navigation }: Props) {
               iduUser: respuesta.idu_usuario
             });
           }
+          else{
+               Alert.alert(
+            "Error",
+            "No se han encontrado datos sobre este ususario, intente con otro usuario o contraseña."
+          );
+          return;
+          }
         } else {
+          console.log("Fecha Expiracion:", fechaExpiracion.toLocaleDateString());
+          console.log("Fecha Actual:", fechaActual.toLocaleDateString());
           const semana: any = await obtenerSemanaActivaSqLite();
 
           setNombreUsuario(datos[0].nom_usuario);

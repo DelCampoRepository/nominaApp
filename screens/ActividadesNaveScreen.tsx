@@ -27,6 +27,7 @@ import {
 } from "../src/services/sqlite";
 import { iNaveSeleccionada } from "../src/interfaces/local/INaveSeleccionada";
 import dayjs from "dayjs";
+import { IdatosActividadesNaves } from "../src/interfaces/local/IdatosActNave";
 type Props = NativeStackScreenProps<RootStackParamList, "ActividadesNave">;
 type Actividad = {
   key: number | string; // debe ser único por fila
@@ -158,13 +159,13 @@ export default function ActividadesNaveScreen({ navigation }: Props) {
       async function GuardarActNaeve() {
         const semana: any = await obtenerSemanaActivaSqLite();
         console.log(datosNave.descripcionNave);
-        const filtro: iNaveSeleccionada[] = listaActNave.map((actividad) => ({
+        const filtro: IdatosActividadesNaves[] = listaActNave.map((actividad) => ({
           cod_lote: datosLote.codLote,
           cod_nave: actividad.cod_nave,
-          desc_nave: actividad.desc_nave,
+          Descripcion_nave: actividad.desc_nave,
           cod_actividad: actividad.cod_actividad,
           cod_avance: actividad.cod_avance,
-          des_actividad: actividad.des_actividad,
+          nom_actividad: actividad.des_actividad,
           semanaActiva: semana[0].semanaActiva,
           fecha: fecha,
           seleccionado: actividad.seleccionado

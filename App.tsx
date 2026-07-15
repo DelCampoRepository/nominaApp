@@ -11,23 +11,31 @@ import { AuthProvider } from "./src/context/AuthContext";
 import { theme } from "./screens/theme";
 import { RootStackParamList } from "./types/types";
 
-import HomeScreen from "./screens/HomeScreen";
+//import HomeScreen from "./screens/HomeScreen";
 import QrScannerScreen from "./screens/QrScannerScreen";
-import EmpleadosScreen from "./screens/EmpleadosScreen";
+//import EmpleadosScreen from "./screens/EmpleadosScreen";
+import EmpleadosScreen from "./screens/EmpleadosScreen/screen/EmpleadosScreen";
 import LoginScreen from "./screens/LoginScreen";
 import ListaEmpleadosScreen from "./screens/ListaEmpleadosScreen";
+
 import ListaNavesScreen from "./screens/ListaNavesScreen";
-import ActividadesLoteScreen from "./screens/ActividadesLoteScreen";
-import ActividadesNaveScreen from "./screens/ActividadesNaveScreen";
-import ReporteAvancesScreen from "./screens/ReporteAvancesScreen";
+import ActividadesLoteScreen from "./screens/ActividadesLoteScreen/screen/ActividadesLotesScreen";
+import ActividadesNaveScreen from "./screens/ActividadesNaveScreen/screen/ActividadesNaveScreen";
+import HomeScreen from "./screens/HomeScreen/screen/HomeScreen";
+import AvancesxActividadesScreen from "./screens/AvancesPorActividadScreen/screen/AvancesxActividadesScreen";
+//import ActividadesLoteScreen from "./screens/ActividadesLoteScreen";
+//import ActividadesNaveScreen from "./screens/ActividadesNaveScreen";
+import AvancesScreen from "./screens/AvancesScreen/screen/AvancesScreen";
+import ReporteAvancesScreen from "./screens/ReportesScreen/screen/ReporteAvancesScreen"
 import TransferirScreen from "./screens/TrasferirScreen";
-import AvancesSCreen from "./screens/AvancesScreen";
+//import AvancesSCreen from "./screens/AvancesScreen";
 import { EmployeeProvider } from "./src/context/QrContext";
 import { NaveProvider } from "./src/context/NaveContext";
 import { UsuarioProvider } from "./src/context/userContext";
 import LoadingScreen from "./screens/LoadingScreen";
-import AvancesxActividadesScreen from "./screens/AvancesxActividadesScreen";
+//import AvancesxActividadesScreen from "./screens/AvancesxActividadesScreen";
 import PatallaPagos from "./screens/PantallaPagos";
+import PatallaPagosScreen from "./screens/PantallaPagosScreen/screen/PantallaPagosScreen";
 const Stack = createNativeStackNavigator<RootStackParamList>(); // ← GENÉRICO OBLIGATORIO
 
 export default function App() {
@@ -55,7 +63,7 @@ export default function App() {
                       />
                       <Stack.Screen
                         name="Pagos"
-                        component={PatallaPagos}
+                        component={PatallaPagosScreen}
                         options={{ gestureEnabled: false }}
                       />
                       <Stack.Screen
@@ -105,7 +113,7 @@ export default function App() {
                       ></Stack.Screen>
                       <Stack.Screen
                         name="Avances"
-                        component={AvancesSCreen}
+                        component={AvancesScreen}
                         options={{ gestureEnabled: false }}
                       ></Stack.Screen>
                       <Stack.Screen

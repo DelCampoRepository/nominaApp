@@ -64,7 +64,7 @@ export default function QrScannerScreen({ navigation }: Props) {
           backgroundColor: "white"
         }}
       >
-        <Header titulo="ESCANER CREDENCIAL EMPLEADO" pantalla="Inicio" />
+        <Header titulo="ESCANER CREDENCIAL EMPLEADO" pantalla="" />
       </View>
       <View style={{ width: "100%", height: "70%" }}>
         <CameraView

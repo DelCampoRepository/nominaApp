@@ -19,7 +19,8 @@ export default function Header({ titulo, pantalla }: HeaderProps) {
   const handleBackPress = () => {
     clearEmployeeCode();
 
-    if (pantalla === "") navigation.goBack();
+    if (pantalla === "") 
+      navigation.goBack();
     else navigation.navigate(pantalla);
     clearNombre();
   };

@@ -1,11 +1,10 @@
-import React, { useState, useEffect, useRef, act } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../types/types";
 import { View } from "react-native";
-import { Text, IconButton, List, Divider, Button } from "react-native-paper";
+import { Text, List, Divider } from "react-native-paper";
 import {
   StyleSheet,
-  TouchableOpacity,
   ScrollView,
   Animated
 } from "react-native";
@@ -22,6 +21,7 @@ import {
   SeleccionarAvancesEmpleadosASyncronizar
 } from "../src/services/sqlite";
 import { IHeaderReporte } from "../src/interfaces/IEmpleadosParaAsentar";
+import { ConsultarSemanaActiva } from "../src/utils/ObtenerSemanaActiva";
 type Props = NativeStackScreenProps<RootStackParamList, "ReporteAvances">;
 
 export default function ReporteAvancesScreen({ navigation }: Props) {
@@ -94,10 +94,10 @@ export default function ReporteAvancesScreen({ navigation }: Props) {
     }
 
     async function consulta() {
-      const semana: any[] = await obtenerSemanaActivaSqLite();
+      const semana = await ConsultarSemanaActiva();
       console.log("semana activa", semana);
       const datos = await SeleccionarAvancesEmpleadosASyncronizar(
-        semana[0].semanaActiva,
+        semana,
         fecha
       );
 

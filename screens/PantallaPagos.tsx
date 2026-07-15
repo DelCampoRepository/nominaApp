@@ -1,11 +1,10 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { View, StyleSheet, TouchableOpacity, Alert } from "react-native";
-import { use, useState } from "react";
+import {  useState } from "react";
 import { RootStackParamList } from "../types/types";
 import { Text, IconButton, List, Divider, Button } from "react-native-paper";
-import ListAccordion from "react-native-paper/lib/typescript/components/List/ListAccordion";
 import { useEffect } from "react";
-import { FlatList, ScrollView } from "react-native-gesture-handler";
+import {  ScrollView } from "react-native-gesture-handler";
 import HeaderTablaActiAva from "../src/components/HeaderTablaActiAva";
 import { obtenerJefesNave } from "../src/services/ObtenerJefesNave";
 import { useUser } from "../src/context/userContext";
@@ -13,13 +12,11 @@ import { IRespuestaJefesNave } from "../src/interfaces/IRespuestaJefeNave";
 import { IJefeNave } from "../src/interfaces/local/IJefeNave";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { ObtenerEmpleadosNomina } from "../src/services/ObtenerAvanceEmpleados";
-import { IAvancesNomina, IAvanceUI } from "../src/interfaces/IAvancesNomina";
+import {IAvanceUI } from "../src/interfaces/IAvancesNomina";
 import {
   existeAvanceEnSQLite,
   insertarAvanceSQLite,
   obtenerSemanaActivaSqLite,
-  SeleccioarEmpleadosparaAsignarActividad,
-  SeleccionarAvancesEmpleadosASyncronizar,
   SeleccionarAvancesNomina
 } from "../src/services/sqlite";
 type Props = NativeStackScreenProps<RootStackParamList, "Pagos">;
@@ -89,7 +86,10 @@ export default function PatallaPagos({ route, navigation }: Props) {
         })
       );
       setAvancesAgrupados(avancesAgrupados);
+     
+
     }
+
   }, [listaAvances]);
 
   const handleObtenerAvances = async () => {
@@ -125,7 +125,7 @@ export default function PatallaPagos({ route, navigation }: Props) {
         avanceUI.push({
           ...avance,
           existeEnSqlite: existe ? true : false
-        });
+        } as IAvanceUI);
       }
       //  console.log(avanceUI);
       setListaAvances(avanceUI);
@@ -142,12 +142,14 @@ export default function PatallaPagos({ route, navigation }: Props) {
         (a) => a.Seleccionado === 1 && !a.existeEnSqlite
       );
 
-      if (avancesAGuardar.length === 0) {
+       console.log('flat',JSON.stringify(avancesAGuardar,null,2))
+      
+       if (avancesAGuardar.length === 0) {
         Alert.alert("Aviso", "No hay avances nuevos para guardar");
         return;
       }
 
-      await insertarAvanceSQLite(avancesAGuardar, semana[0].semanaActiva);
+     // await insertarAvanceSQLite(avancesAGuardar, semana[0].semanaActiva);
 
       Alert.alert("Éxito", "Avances guardados correctamente");
       setListaAvances((prev) =>
@@ -175,20 +177,22 @@ export default function PatallaPagos({ route, navigation }: Props) {
   const onChange = (_: any, selectedDate?: Date) => {
     setMostrar(false);
     if (!selectedDate) return;
-
+ const fec = new Date();
     const fecha =
-      selectedDate.getFullYear().toString() +
-      (selectedDate.getMonth() + 1).toString().padStart(2, "0") +
-      selectedDate.getDate().toString().padStart(2, "0");
+      fec.getFullYear().toString() +
+      (fec.getMonth() + 1).toString().padStart(2, "0") +
+      fec.getDate().toString().padStart(2, "0");
 
     // setFecha(selectedDate);
+   console.log(fecha);
     setDatosform({
       ...datosform,
-      fecha: fecha // YYYYMMDD
+      fecha: " 20260509" // YYYYMMDD
     });
     // Alert.alert("", fecha);
   };
 
+   
   const handleSeleccion = (
     codEmpleado: string,
     codActividad: string,

@@ -1,22 +1,20 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../types/types";
-import { ScrollView, Animated, TouchableOpacity, Alert } from "react-native";
+import { ScrollView, Animated, Alert } from "react-native";
 import { useState, useEffect, useRef } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { View, StyleSheet } from "react-native";
-import { Text, TextInput, Button, List } from "react-native-paper";
+import { Text, TextInput, Button } from "react-native-paper";
 import Header from "../src/components/Header";
 import { useUser } from "../src/context/userContext";
 import HeaderTablaActiAva from "../src/components/HeaderTablaActiAva";
 import { IAvanceEmpleado } from "../src/interfaces/local/IAvanceEmpleado";
-import { IConsultarAvance } from "../src/interfaces/IConsultarAvance";
-import { ConsultarAvance } from "../src/services/ConsultaWSValidaActividadConPresupuesto";
+
 import { IEmpleadosParaAsentar } from "../src/interfaces/IEmpleadosParaAsentar";
 import { IWDatos } from "../src/interfaces/IEmpleadosParaAsentar";
-import { GuardarAvancesEnDb } from "../src/services/GuardarAvancesAAsenar";
+
 import {
-  AsentarEmpleados,
-  SeleccioarEmpleadosparaAsignarActividad,
+
   ActualizarAvances,
   obtenerSemanaActivaSqLite,
   SeleccionarEmpleadosCapturados

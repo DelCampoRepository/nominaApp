@@ -85,6 +85,7 @@ export default function EmpleadosScreen({ navigation }: Props) {
   const translateYInputs = useRef(new Animated.Value(200)).current;
   const [codEmpleado, setCodEmpleado] = useState<string>("");
   const [nombreEmpl, setNombreEmp] = useState<string>("");
+  
   const {
     employeeCode,
     nombreEmpleadoState,
@@ -318,6 +319,7 @@ export default function EmpleadosScreen({ navigation }: Props) {
           semanaActiva: semana[0].semanaActiva,
           fecha: fecha
         })
+        
       );
       setEmpleadosAsentar(empleadosParaAsentar as IAvanceEmpleado[]);
     }
