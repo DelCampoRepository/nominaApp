@@ -1,12 +1,20 @@
-import { StyleSheet, View, Image, ImageBackground, Alert } from "react-native";
 import {
-  Text,
-  TextInput,
-  Button,
-  ActivityIndicator,
-  MD2Colors
-} from "react-native-paper";
+  StyleSheet,
+  View,
+  Image,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  Modal,
+  Pressable,
+  useWindowDimensions
+} from "react-native";
+import { Text, TextInput, Button } from "react-native-paper";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useFocusEffect } from "@react-navigation/native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
 import { RootStackParamList } from "../types/types";
 import { AuthContext } from "../src/context/AuthContext";
 import { useUser } from "../src/context/userContext";
@@ -25,6 +33,16 @@ import {
   esSinInternet,
   hayInternet
 } from "../src/utils/conexion";
+import {
+  INTENTOS_MAXIMOS_PATRON,
+  MINIMO_PUNTOS,
+  obtenerPatron,
+  verificarPatron,
+  obtenerIntentosFallidos,
+  registrarIntentoFallido,
+  reiniciarIntentosFallidos
+} from "../src/services/local/patronAcceso";
+import PatronDesbloqueo from "../src/components/PatronDesbloqueo";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Login">;
 
@@ -38,6 +56,21 @@ type RespuestaLogin = {
   user?: any;
   token?: { token: any; expiration: any };
 };
+
+const COLORES = {
+  fondo: "#e5e9f4",
+  tarjeta: "#ffffff",
+  verde: "#13c044",
+  verdeOscuro: "#008445",
+  verdeSuave: "#e3f6e9",
+  grisSuave: "#eef0f5",
+  texto: "#1f2933",
+  textoSuave: "#6b7280",
+  error: "#d32f2f"
+};
+
+// Datos guardados en el teléfono con los que se entra al usar el patrón.
+type SesionConPatron = { user: string; nombre: string; contra: string };
 
 /**
  * Logging centralizado. En producción `console.log` no se ve en ningún lado,
@@ -85,11 +118,12 @@ function parseExpiracion(valor: unknown): number | null {
 }
 
 export default function LoginScreen({ navigation }: Props) {
-  const { handleLogin, loading, error } = useLogin();
+  const { handleLogin, loading } = useLogin();
+  const { width } = useWindowDimensions();
 
   const [datosUsuario, setDatosUsuario] = useState({
-    username: "fortega",
-    password: "220278"
+    username: "",
+    password: ""
   });
   const { login, logout } = useContext(AuthContext);
   const { setNombreUsuario, setIduUsuario } = useUser();
@@ -100,6 +134,42 @@ export default function LoginScreen({ navigation }: Props) {
   // del `loading` de `useLogin`. Esto evita el doble-submit.
   const [procesando, setProcesando] = useState(false);
   const bloqueado = loading || procesando;
+
+  // Patrón de acceso
+  const [sesionPatron, setSesionPatron] = useState<SesionConPatron | null>(null);
+  // Empieza bloqueado hasta leer el conteo de intentos fallidos.
+  const [patronBloqueado, setPatronBloqueado] = useState(true);
+  const [modalPatron, setModalPatron] = useState(false);
+  const [estadoTrazo, setEstadoTrazo] = useState<"normal" | "error" | "ok">("normal");
+  const [mensajePatron, setMensajePatron] = useState("");
+  const [verificandoPatron, setVerificandoPatron] = useState(false);
+
+  // Se revisa al mostrar la pantalla si hay un patrón para el usuario guardado
+  // en el teléfono (y su contraseña, que es con la que se inicia sesión).
+  const revisarPatron = useCallback(async () => {
+    try {
+      if (!(await initDB())) return;
+      const datos = await SeleccionarDatosUsuario();
+      const registro = datos[0];
+      if (!registro?.user || !registro?.contra || !(await obtenerPatron(registro.user))) {
+        setSesionPatron(null);
+        return;
+      }
+      // Se lee el bloqueo antes de mostrar el botón para que no quede activo
+      // ni un momento si el patrón está bloqueado.
+      const bloqueadoAhora = (await obtenerIntentosFallidos()) >= INTENTOS_MAXIMOS_PATRON;
+      setPatronBloqueado(bloqueadoAhora);
+      setSesionPatron({ user: registro.user, nombre: registro.nom_usuario, contra: registro.contra });
+    } catch {
+      setSesionPatron(null);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      revisarPatron();
+    }, [revisarPatron])
+  );
 
   /**
    * Guarda la sesión resultante de un login exitoso y navega a "Loading".
@@ -129,6 +199,7 @@ export default function LoginScreen({ navigation }: Props) {
       setNombreUsuario(respuesta.nom_usuario);
       setIduUsuario(respuesta.idu_usuario);
       await login(String(respuesta.token.token));
+      await reiniciarIntentosFallidos();
 
       navigation.navigate("Loading", {
         nomUsuario: respuesta.nom_usuario,
@@ -142,7 +213,7 @@ export default function LoginScreen({ navigation }: Props) {
   /**
    * Hace login contra el backend y, si tiene éxito, guarda y navega.
    * Si falla, muestra una alerta clara. Cualquier excepción se relanza
-   * para que el llamador (onSubmit) decida el mensaje según el contexto.
+   * para que el llamador (iniciarSesion) decida el mensaje según el contexto.
    */
   const loginRemotoYGuardar = useCallback(
     async (username: string, password: string) => {
@@ -172,15 +243,11 @@ export default function LoginScreen({ navigation }: Props) {
     [handleLogin, procesarLoginExitoso]
   );
 
-  const onSubmit = async () => {
-    const username = datosUsuario.username.trim();
-    const password = datosUsuario.password;
-
-    if (username === "" || password.trim() === "") {
-      Alert.alert("Error", "Por favor, ingrese usuario y contraseña");
-      return;
-    }
-
+  /**
+   * Flujo de inicio de sesión. Lo usan el botón Ingresar (con lo que se
+   * escribió) y el patrón (con el usuario y contraseña guardados).
+   */
+  const iniciarSesion = async (username: string, password: string) => {
     if (bloqueado) return; // evita doble-submit
 
     setProcesando(true);
@@ -247,6 +314,15 @@ export default function LoginScreen({ navigation }: Props) {
         return;
       }
 
+      // Antes se entraba con la sesión local sin revisar la contraseña (bastaba
+      // el usuario). Si no coincide con la guardada se valida contra el
+      // servidor, por si el usuario la cambió; sin internet se rechaza ahí.
+      if (password !== registro.contra) {
+        logDebug("auth check -> rama: CONTRASEÑA DISTINTA A LA GUARDADA, se valida en el servidor");
+        await loginRemotoYGuardar(username, password);
+        return;
+      }
+
       logDebug("auth check -> rama: SESION VALIDA, se entra directo a Inicio");
 
       // Sesión local vigente y del mismo usuario: entrar sin llamar al backend.
@@ -256,6 +332,7 @@ export default function LoginScreen({ navigation }: Props) {
       // Se consulta igual (puede ser útil para otras pantallas), pero no bloquea el flujo.
       await obtenerSemanaActivaSqLite();
 
+      await reiniciarIntentosFallidos();
       setNombreUsuario(registro.nom_usuario);
       setIduUsuario(registro.idu_usuario);
       navigation.navigate("Inicio");
@@ -272,186 +349,365 @@ export default function LoginScreen({ navigation }: Props) {
     }
   };
 
+  const onSubmit = () => {
+    const username = datosUsuario.username.trim();
+    const password = datosUsuario.password;
+
+    if (username === "" || password.trim() === "") {
+      Alert.alert("Error", "Por favor, ingrese usuario y contraseña");
+      return;
+    }
+    iniciarSesion(username, password);
+  };
+
+  const abrirPatron = () => {
+    setEstadoTrazo("normal");
+    setMensajePatron("Dibuja tu patrón para entrar");
+    setModalPatron(true);
+  };
+
+  const alTerminarPatron = async (secuencia: number[]) => {
+    if (!sesionPatron || verificandoPatron) return;
+    // Un toque o trazo corto no es un intento real: no se cuenta como fallido.
+    if (secuencia.length < MINIMO_PUNTOS) {
+      setEstadoTrazo("error");
+      setMensajePatron(`Une al menos ${MINIMO_PUNTOS} puntos.`);
+      setTimeout(() => setEstadoTrazo("normal"), 700);
+      return;
+    }
+    setVerificandoPatron(true);
+    try {
+      // Se vuelve a leer el conteo guardado: el estado en pantalla podría no
+      // estar al día.
+      if ((await obtenerIntentosFallidos()) >= INTENTOS_MAXIMOS_PATRON) {
+        setPatronBloqueado(true);
+        setModalPatron(false);
+        return;
+      }
+      if (await verificarPatron(sesionPatron.user, secuencia)) {
+        setEstadoTrazo("ok");
+        setModalPatron(false);
+        await iniciarSesion(sesionPatron.user, sesionPatron.contra);
+        return;
+      }
+      setEstadoTrazo("error");
+      const intentos = await registrarIntentoFallido();
+      const restantes = INTENTOS_MAXIMOS_PATRON - intentos;
+      if (restantes <= 0) {
+        setPatronBloqueado(true);
+        setModalPatron(false);
+        Alert.alert(
+          "Patrón bloqueado",
+          "Demasiados intentos con un patrón incorrecto. Entra con tu usuario y contraseña para volver a usar el patrón."
+        );
+        return;
+      }
+      setMensajePatron(
+        `Patrón incorrecto. Te ${restantes === 1 ? "queda 1 intento" : `quedan ${restantes} intentos`}.`
+      );
+    } finally {
+      setVerificandoPatron(false);
+      setTimeout(() => setEstadoTrazo("normal"), 700);
+    }
+  };
+
+  const tamanoPatron = Math.min(width - 96, 280);
+
   return (
-    <ImageBackground
-      source={require("../assets/chat2.png")}
-      style={styles.background}
-    >
-      {bloqueado ? (
-        <View
-          style={{
-            width: "80%",
-            height: "60%",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: "#e5e9f4d0",
-            borderRadius: 10,
-            shadowColor: "#000",
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.25,
-            shadowRadius: 3.84
-          }}
+    <View style={styles.container}>
+      <LinearGradient
+        colors={[COLORES.verde, COLORES.verdeOscuro]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.fondoSuperior}
+      />
+      <SafeAreaView style={{ flex: 1 }}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
-          <ActivityIndicator animating={true} color={MD2Colors.green800} />
-        </View>
-      ) : (
-        <View
-          style={{
-            width: "80%",
-            height: "60%",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: "#e5e9f4d0",
-            borderRadius: 10,
-            shadowColor: "#000",
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.25,
-            shadowRadius: 3.84
-          }}
-        >
-          <View
-            style={{
-              width: "100%",
-              height: "40%",
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center"
-            }}
+          <ScrollView
+            contentContainerStyle={styles.contenido}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
           >
-            <Image
-              style={{ width: 100, height: 100 }}
-              source={require("../assets/delcamp.png")}
-              resizeMode="center"
-            />
-          </View>
-          <View
-            style={{
-              width: "100%",
-              height: "60%",
-              padding: 20
-            }}
-          >
-            <TextInput
-              label="Usuario"
-              value={datosUsuario.username}
-              mode="outlined"
-              outlineColor="#008445"
-              activeOutlineColor="#008445"
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="username"
-              textContentType="username"
-              right={<TextInput.Icon icon={require("../assets/account.png")} />}
-              style={{ marginBottom: 15, backgroundColor: "#e5e9f497" }}
-              onChangeText={(text: string) =>
-                setDatosUsuario((prev) => ({ ...prev, username: text }))
-              }
-            />
-            <TextInput
-              label="Contraseña"
-              value={datosUsuario.password}
-              mode="outlined"
-              secureTextEntry={!passVisible}
-              outlineColor="#008445"
-              activeOutlineColor="#008445"
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="password"
-              textContentType="password"
-              right={
-                <TextInput.Icon
-                  icon={require("../assets/eye.png")}
-                  onPress={() => setPassVisible(!passVisible)}
+            <View style={styles.marca}>
+              <View style={styles.circuloLogo}>
+                <Image
+                  style={styles.logo}
+                  source={require("../assets/delcamp.png")}
+                  resizeMode="contain"
                 />
-              }
-              style={{ marginBottom: 15, backgroundColor: "#e5e9f497" }}
-              onChangeText={(text: string) =>
-                setDatosUsuario((prev) => ({ ...prev, password: text }))
-              }
+              </View>
+              <Text style={styles.bienvenida}>Bienvenido</Text>
+              <Text style={styles.subtitulo}>Inicia sesión para continuar</Text>
+            </View>
+
+            <View style={styles.tarjeta}>
+              <TextInput
+                label="Usuario"
+                value={datosUsuario.username}
+                mode="outlined"
+                outlineColor="#d1d5db"
+                activeOutlineColor={COLORES.verdeOscuro}
+                outlineStyle={{ borderRadius: 12 }}
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="username"
+                textContentType="username"
+                disabled={bloqueado}
+                left={<TextInput.Icon icon={require("../assets/account.png")} color={COLORES.textoSuave} />}
+                style={styles.campo}
+                onChangeText={(text: string) =>
+                  setDatosUsuario((prev) => ({ ...prev, username: text }))
+                }
+              />
+              <TextInput
+                label="Contraseña"
+                value={datosUsuario.password}
+                mode="outlined"
+                secureTextEntry={!passVisible}
+                outlineColor="#d1d5db"
+                activeOutlineColor={COLORES.verdeOscuro}
+                outlineStyle={{ borderRadius: 12 }}
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="password"
+                textContentType="password"
+                disabled={bloqueado}
+                right={
+                  <TextInput.Icon
+                    icon={require("../assets/eye.png")}
+                    color={passVisible ? COLORES.verdeOscuro : COLORES.textoSuave}
+                    onPress={() => setPassVisible(!passVisible)}
+                  />
+                }
+                style={styles.campo}
+                onSubmitEditing={onSubmit}
+                returnKeyType="go"
+                onChangeText={(text: string) =>
+                  setDatosUsuario((prev) => ({ ...prev, password: text }))
+                }
+              />
+              <Button
+                mode="contained"
+                buttonColor={COLORES.verdeOscuro}
+                style={styles.botonPrincipal}
+                contentStyle={{ height: 50 }}
+                labelStyle={{ fontSize: 16, fontWeight: "700" }}
+                onPress={onSubmit}
+                disabled={bloqueado}
+                loading={bloqueado}
+              >
+                {bloqueado ? "Ingresando…" : "Ingresar"}
+              </Button>
+
+              {!!sesionPatron && (
+                <>
+                  <View style={styles.separador}>
+                    <View style={styles.linea} />
+                    <Text style={styles.textoSeparador}>o</Text>
+                    <View style={styles.linea} />
+                  </View>
+                  <Button
+                    mode="outlined"
+                    textColor={COLORES.verdeOscuro}
+                    style={[styles.botonPatron, patronBloqueado && { opacity: 0.5 }]}
+                    contentStyle={{ height: 48 }}
+                    icon={require("../assets/pattern.png")}
+                    disabled={bloqueado || patronBloqueado}
+                    onPress={abrirPatron}
+                  >
+                    Entrar con patrón
+                  </Button>
+                  <Text style={styles.notaPatron}>
+                    {patronBloqueado
+                      ? "Patrón bloqueado por intentos fallidos. Entra con tu contraseña."
+                      : `Como ${sesionPatron.nombre || sesionPatron.user}`}
+                  </Text>
+                </>
+              )}
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+
+      <Modal
+        visible={modalPatron}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setModalPatron(false)}
+      >
+        <Pressable style={styles.fondoModal} onPress={() => !verificandoPatron && setModalPatron(false)} />
+        <View style={styles.hoja}>
+          <View style={styles.asa} />
+          <Text style={styles.tituloModal}>Entrar con patrón</Text>
+          <Text style={styles.usuarioModal}>
+            {sesionPatron?.nombre || sesionPatron?.user}
+          </Text>
+          <Text
+            style={[styles.mensajeModal, estadoTrazo === "error" && { color: COLORES.error }]}
+          >
+            {mensajePatron}
+          </Text>
+          <View style={styles.marcoPatron}>
+            <PatronDesbloqueo
+              tamano={tamanoPatron}
+              estado={estadoTrazo}
+              deshabilitado={verificandoPatron}
+              onTerminar={alTerminarPatron}
             />
-            <Button
-              mode="contained"
-              buttonColor="#008445"
-              onPress={onSubmit}
-              disabled={bloqueado}
-              loading={bloqueado}
-            >
-              Ingresar
-            </Button>
           </View>
+          <Button
+            mode="text"
+            textColor={COLORES.textoSuave}
+            disabled={verificandoPatron}
+            onPress={() => setModalPatron(false)}
+          >
+            Usar usuario y contraseña
+          </Button>
         </View>
-      )}
-    </ImageBackground>
+      </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    display: "flex",
+    backgroundColor: COLORES.fondo
+  },
+  fondoSuperior: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: "45%",
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32
+  },
+  contenido: {
+    flexGrow: 1,
+    justifyContent: "center",
+    padding: 20
+  },
+  marca: {
+    alignItems: "center",
+    marginBottom: 24
+  },
+  circuloLogo: {
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    backgroundColor: "#ffffff",
     alignItems: "center",
     justifyContent: "center",
-    width: "100%",
-    height: "100%",
-    marginTop: 23,
-    backgroundColor: "#e5e9f4ff"
-  },
-
-  centerContainer: {
-    width: "70%",
-    height: "80%",
-    display: "flex"
-  },
-
-  logoContainer: {
-    width: "100%",
-    height: "30%",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center"
+    marginBottom: 14,
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 }
   },
   logo: {
-    width: 120,
-    height: 100,
-    resizeMode: "contain"
+    width: 76,
+    height: 76
   },
-
-  formularioContainer: {
-    width: "100%",
-    height: "50%",
-    display: "flex",
-
-    justifyContent: "center"
+  bienvenida: {
+    color: "#ffffff",
+    fontSize: 26,
+    fontWeight: "800"
   },
-
-  usuarioContainer: {
-    marginTop: 10,
-    width: "100%"
+  subtitulo: {
+    color: "rgba(255,255,255,0.9)",
+    fontSize: 14,
+    marginTop: 4
   },
-  boton: {
-    marginTop: 20,
-    width: "100%",
-    height: 50,
+  tarjeta: {
+    backgroundColor: COLORES.tarjeta,
+    borderRadius: 24,
+    padding: 20,
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 }
+  },
+  campo: {
+    marginBottom: 14,
+    backgroundColor: "#ffffff"
+  },
+  botonPrincipal: {
+    borderRadius: 14,
+    marginTop: 4
+  },
+  separador: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#008445"
+    marginVertical: 16
   },
-  background: {
+  linea: {
     flex: 1,
-    resizeMode: "cover", // "cover" se ajusta al tamaño
-    justifyContent: "center",
+    height: 1,
+    backgroundColor: "#e5e7eb"
+  },
+  textoSeparador: {
+    marginHorizontal: 12,
+    color: COLORES.textoSuave,
+    fontSize: 13
+  },
+  botonPatron: {
+    borderRadius: 14,
+    borderColor: COLORES.verdeOscuro
+  },
+  notaPatron: {
+    fontSize: 12,
+    color: COLORES.textoSuave,
+    textAlign: "center",
+    marginTop: 8
+  },
+  fondoModal: {
+    flex: 1,
+    backgroundColor: "rgba(17, 24, 39, 0.45)"
+  },
+  hoja: {
+    backgroundColor: COLORES.tarjeta,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 24,
     alignItems: "center"
   },
-  content: {
-    backgroundColor: "rgba(0,0,0,0.4)", // para contraste
-    padding: 20,
-    borderRadius: 10
+  asa: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#d1d5db",
+    marginBottom: 14
   },
-  text: {
-    color: "#fff",
-    fontSize: 24,
-    fontWeight: "bold"
+  tituloModal: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: COLORES.texto
+  },
+  usuarioModal: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: COLORES.verdeOscuro,
+    marginTop: 2
+  },
+  mensajeModal: {
+    fontSize: 14,
+    color: COLORES.textoSuave,
+    textAlign: "center",
+    marginTop: 8,
+    marginBottom: 12
+  },
+  marcoPatron: {
+    backgroundColor: COLORES.grisSuave,
+    borderRadius: 24,
+    padding: 12,
+    marginBottom: 8
   }
 });

@@ -86,6 +86,17 @@ const SECCIONES: { titulo: string; opciones: Opcion[] }[] = [
         pantalla: "Pagos"
       }
     ]
+  },
+  {
+    titulo: "Cuenta",
+    opciones: [
+      {
+        titulo: "Patrón de acceso",
+        descripcion: "Entra sin escribir tu contraseña",
+        icono: require("../../../assets/pattern.png"),
+        pantalla: "ConfigurarPatron"
+      }
+    ]
   }
 ];
 

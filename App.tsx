@@ -56,6 +56,7 @@ import LoadingScreen from "./screens/LoadingScreen";
 
 import PatallaPagosScreen from "./screens/PantallaPagosScreen/screen/PantallaPagosScreen";
 import EmpleadosSeleccionadosScreen from "./screens/EmpleadosSeleccionadosScreen/screen/EmpleadosSeleccionadosScreen";
+import ConfigurarPatronScreen from "./screens/ConfigurarPatronScreen/screen/ConfigurarPatronScreen";
 const Stack = createNativeStackNavigator<RootStackParamList>(); // ← GENÉRICO OBLIGATORIO
 
 export default function App() {
@@ -150,6 +151,11 @@ export default function App() {
                       <Stack.Screen
                         name="EmpleadosSeleccionados"
                         component={EmpleadosSeleccionadosScreen}
+                        options={{ gestureEnabled: false }}
+                      ></Stack.Screen>
+                      <Stack.Screen
+                        name="ConfigurarPatron"
+                        component={ConfigurarPatronScreen}
                         options={{ gestureEnabled: false }}
                       ></Stack.Screen>
                     </Stack.Navigator>

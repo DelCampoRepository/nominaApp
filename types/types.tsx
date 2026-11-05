@@ -30,6 +30,7 @@ export type RootStackParamList = {
   };
   Pagos: undefined;
   EmpleadosSeleccionados: undefined;
+  ConfigurarPatron: undefined;
 
   Header: { headerText: string; navigateTo: string };
 };
