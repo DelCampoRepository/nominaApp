@@ -729,8 +729,17 @@ export async function SeleccionarEmpleadosCapturados(  codLote: string, codNave:
 
         const database = await getDB();
        
+        // 1) Empleados asentados en la nave hoy, con su avance de la actividad
+        //    (0 si aún no tienen).
+        // 2) Más los empleados que ya tienen avance de la actividad hoy aunque
+        //    no estén asentados (p. ej. los que se guardaron desde Avances jefe
+        //    de nave), para que la lista coincida con lo que cuenta la tarjeta
+        //    de la actividad en Avances.
         const datos = await database.getAllAsync(
-          `SELECT  DISTINCT
+          `SELECT * FROM (
+          SELECT  DISTINCT
+          0 AS grupo,
+          A.id AS orden,
           A.cod_empleado ,
           A.nom_empleado ,
           A.cod_lote ,
@@ -748,28 +757,64 @@ export async function SeleccionarEmpleadosCapturados(  codLote: string, codNave:
           A.cod_lote = B.cod_lote AND
           A.cod_empleado = B.cod_empleado AND
           A.cod_nave = B.cod_nave AND
-          B.cod_actividad = ? 
+          B.cod_actividad = ?
           AND B.cod_avance = ?
            AND B.fecha = ?
           WHERE
             A.cod_lote = ? AND
             A.cod_nave = ? AND
             A.fecha = ? AND
-            A.semana = ? ORDER BY A.id ASC
-          `, [codAct, codAvance, fecha, codLote, codNave, fecha, semana]
+            A.semana = ?
+
+          UNION ALL
+
+          SELECT
+          1 AS grupo,
+          B.id AS orden,
+          B.cod_empleado,
+          B.nom_empleado,
+          B.cod_lote,
+          B.cod_nave,
+          B.fecha,
+          B.semanaActiva AS semana,
+          IFNULL(B.desc_nave, '') AS desc_nave,
+          B.cod_actividad,
+          B.cod_avance,
+          IFNULL(B.des_actividad, '') AS des_actividad,
+          IFNULL(B.avance, 0) AS avance,
+          IFNULL(B.avanceA, 0) AS avanceA
+          FROM tablaAvances B
+          WHERE
+            B.cod_lote = ? AND
+            B.cod_nave = ? AND
+            B.cod_actividad = ? AND
+            B.cod_avance = ? AND
+            B.fecha = ? AND
+            B.semanaActiva = ? AND
+            NOT EXISTS (
+              SELECT 1 FROM tablaEmpleadosSeleccionados A
+              WHERE A.cod_lote = B.cod_lote
+                AND A.cod_nave = B.cod_nave
+                AND A.cod_empleado = B.cod_empleado
+                AND A.fecha = B.fecha
+                AND A.semana = B.semanaActiva
+            )
+          ) ORDER BY grupo ASC, orden ASC
+          `,
+          [
+            codAct, codAvance, fecha, codLote, codNave, fecha, semana,
+            codLote, codNave, codAct, codAvance, fecha, semana
+          ]
         );
 
- 
-        
- 
-       
          return datos as  any[];
   }
   catch(error: any)
   {
      console.log(error.message)
-    return [];
-   
+    // Se propaga para que la pantalla muestre el error en lugar de "sin
+    // empleados".
+    throw error;
   }
   
 }
