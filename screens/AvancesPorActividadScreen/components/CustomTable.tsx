@@ -1,7 +1,8 @@
 
 import { View,StyleSheet, FlatList, Text, TouchableOpacity } from "react-native"
 import { CustomTableRow } from "./CustomTableRow";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useNavigation } from "@react-navigation/native";
 import { ActualizarAvances } from "../../../src/services/sqlite";
 import { ConsultarSemanaActiva } from "../../../src/utils/ObtenerSemanaActiva";
 import { SeleccionarEmpleadosCapturados } from "../../../src/services/sqlite";
@@ -35,7 +36,33 @@ export const CustomTable =({setTotalAvance,setTotalJornal,codLote,codNave,coAct,
     codigo:"",
     nombre:""
   })
-    
+  // Hay avances capturados que aún no se guardan con Guardar.
+  const sinGuardar = useRef(false);
+  const navigation = useNavigation();
+
+  // Los avances capturados viven solo en este estado hasta presionar Guardar:
+  // al salir (flecha del encabezado o botón atrás de Android) se pide
+  // confirmación para no perderlos.
+  useEffect(() => {
+    const quitar = navigation.addListener("beforeRemove", (e) => {
+      if (!sinGuardar.current) return;
+      e.preventDefault();
+      Alert.alert(
+        "Avances sin guardar",
+        "Si sale ahora se perderán los avances que no ha guardado.",
+        [
+          { text: "Seguir capturando", style: "cancel" },
+          {
+            text: "Salir sin guardar",
+            style: "destructive",
+            onPress: () => navigation.dispatch(e.data.action)
+          }
+        ]
+      );
+    });
+    return quitar;
+  }, [navigation]);
+
 useEffect(() => {
 
   async function obtenerEmpleados() {
@@ -107,14 +134,17 @@ const obtenerFechaHoy = (): string => {
 
 const handleGuardar = async () => {
      const res= await ActualizarAvances(AvancesEmpleado);
-     if (res)
+     if (res) {
+      sinGuardar.current = false;
       Alert.alert("","Se han actualizado los avances");
+     }
     else
       Alert.alert("Error","Error al intentar guardar los avances");
 };
 
 async function handleChange (avance:string)  {
     const semana =  await ConsultarSemanaActiva();
+  sinGuardar.current = true;
   setAvancesEmpleado(prev =>
     prev.map(emp =>
       emp.cod_empleado === datosEmpleado.codigo
@@ -140,6 +170,7 @@ async function  AsignarAvanceGenera(avanceGral : string){
     semanaActiva:semana
   }));
 
+  sinGuardar.current = true;
   setAvancesEmpleado(actualizados);
 }
 

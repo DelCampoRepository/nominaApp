@@ -6,13 +6,15 @@ import {
   Image,
   ImageSourcePropType,
   Pressable,
-  ScrollView
+  ScrollView,
+  BackHandler
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { Text, ActivityIndicator, ProgressBar, Button } from "react-native-paper";
 // Íconos PNG de assets/: las fuentes de íconos (@expo/vector-icons) no se
 // muestran en la build de la app.
 const ICONO_REINTENTAR = require("../assets/sync.png");
-import React, { useContext, useEffect, useRef, useState } from "react";
+import React, { useCallback, useContext, useEffect, useRef, useState } from "react";
 import {
   initDB,
   verificarTablas,
@@ -106,8 +108,22 @@ export default function LoadingScreen({ route, navigation }: Props) {
   const [pasos, setPasos] = useState<Record<ClavePaso, InfoPaso>>(estadoInicial);
   const pasosRef = useRef(pasos);
   const [fase, setFase] = useState<Fase>("sincronizando");
+  const faseRef = useRef(fase);
+  faseRef.current = fase;
   const [pasoDetalle, setPasoDetalle] = useState<ClavePaso | null>(null);
   const ejecutando = useRef(false);
+
+  // Mientras sincroniza, el botón atrás de Android no regresa a Login a media
+  // carga. Con errores sí se permite (además de los botones de la pantalla).
+  useFocusEffect(
+    useCallback(() => {
+      const manejador = BackHandler.addEventListener(
+        "hardwareBackPress",
+        () => faseRef.current === "sincronizando"
+      );
+      return () => manejador.remove();
+    }, [])
+  );
 
   const actualizarPaso = (clave: ClavePaso, cambios: Partial<InfoPaso>) => {
     pasosRef.current = {
