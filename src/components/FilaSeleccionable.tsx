@@ -1,9 +1,10 @@
 import React from "react";
-import { Pressable, View, Text, Image, StyleSheet } from "react-native";
-import { ISecundaryActividades } from "../../../src/interfaces/local/ISecundaryActividades";
+import { Pressable, View, Text, Image, ImageSourcePropType, StyleSheet } from "react-native";
 
 type Props = {
-  avance: ISecundaryActividades;
+  codigo: string;
+  nombre: string;
+  icono: ImageSourcePropType;
   seleccionado: boolean;
   modificado: boolean;
   deshabilitado?: boolean;
@@ -27,7 +28,17 @@ const capitalizar = (texto: string) => {
   return t.charAt(0).toUpperCase() + t.slice(1);
 };
 
-export default function FilaAvance({ avance, seleccionado, modificado, deshabilitado, onPress }: Props) {
+// Fila con casilla para marcar una actividad/avance. `modificado` muestra la
+// etiqueta "Sin guardar".
+export default function FilaSeleccionable({
+  codigo,
+  nombre,
+  icono,
+  seleccionado,
+  modificado,
+  deshabilitado,
+  onPress
+}: Props) {
   return (
     <Pressable
       onPress={onPress}
@@ -41,26 +52,24 @@ export default function FilaAvance({ avance, seleccionado, modificado, deshabili
     >
       <View style={[styles.circuloIcono, { backgroundColor: seleccionado ? COLORES.verdeSuave : COLORES.grisSuave }]}>
         <Image
-          source={require("../../../assets/sprout.png")}
+          source={icono}
           style={[styles.icono, { tintColor: seleccionado ? COLORES.verdeOscuro : COLORES.textoSuave }]}
         />
       </View>
 
       <View style={{ flex: 1 }}>
         <View style={styles.filaCodigo}>
-          <Text style={styles.codigo}>
-            {avance.cod_actividad}-{avance.cod_avance}
-          </Text>
+          <Text style={styles.codigo}>{codigo}</Text>
           {modificado && <Text style={styles.sinGuardar}>Sin guardar</Text>}
         </View>
         <Text style={styles.nombre} numberOfLines={2}>
-          {capitalizar(avance.nom_actividad)}
+          {capitalizar(nombre)}
         </Text>
       </View>
 
       <View style={[styles.casilla, seleccionado && styles.casillaMarcada]}>
         {seleccionado && (
-          <Image source={require("../../../assets/check-bold.png")} style={styles.iconoCasilla} />
+          <Image source={require("../../assets/check-bold.png")} style={styles.iconoCasilla} />
         )}
       </View>
     </Pressable>

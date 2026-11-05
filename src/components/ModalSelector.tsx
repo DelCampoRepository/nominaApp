@@ -75,7 +75,7 @@ export default function ModalSelector({
           <View style={styles.encabezado}>
             <Text style={styles.titulo}>{titulo}</Text>
             <Pressable onPress={onCerrar} hitSlop={10} style={styles.botonCerrar}>
-              <Image source={require("../../../assets/close.png")} style={styles.iconoCerrar} />
+              <Image source={require("../../assets/close.png")} style={styles.iconoCerrar} />
             </Pressable>
           </View>
 
@@ -119,7 +119,7 @@ export default function ModalSelector({
                     </Text>
                   </View>
                   {activo && (
-                    <Image source={require("../../../assets/check-bold.png")} style={styles.check} />
+                    <Image source={require("../../assets/check-bold.png")} style={styles.check} />
                   )}
                 </Pressable>
               );

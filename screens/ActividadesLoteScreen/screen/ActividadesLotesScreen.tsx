@@ -1,18 +1,8 @@
 import { RootStackParamList } from "../../../types/types";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { SafeAreaView } from "react-native-safe-area-context";
-import {
-  StyleSheet,
-  View,
-  Text,
-  Image,
-  ImageSourcePropType,
-  Pressable,
-  ScrollView,
-  Alert
-} from "react-native";
+import { StyleSheet, View, Text, Pressable, ScrollView, Alert } from "react-native";
 import { Button, ActivityIndicator } from "react-native-paper";
-import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useRef, useState } from "react";
 import { IListaLotesxUsuario } from "../../../src/interfaces/local/IListaLotesxUsuario";
 import { IMainActividades } from "../../../src/interfaces/local/IMainActividades";
@@ -27,24 +17,18 @@ import {
 import { ConsultarSemanaActiva } from "../../../src/utils/ObtenerSemanaActiva";
 import { obtenerFecha } from "../../../src/utils/GenerarFecha";
 import { useEmployee } from "../../../src/context/QrContext";
-import ModalSelector, { OpcionSelector } from "../components/ModalSelector";
-import FilaAvance from "../components/FilaAvance";
+import ModalSelector, { OpcionSelector } from "../../../src/components/ModalSelector";
+import FilaSeleccionable from "../../../src/components/FilaSeleccionable";
+import {
+  COLORES,
+  EncabezadoVerde,
+  TarjetaSelectores,
+  SelectorPaso,
+  AvisoResultado,
+  EstadoVacio
+} from "../../../src/components/PantallaSeleccion";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ActividadesLote">;
-
-const COLORES = {
-  fondo: "#e5e9f4",
-  tarjeta: "#ffffff",
-  verde: "#13c044",
-  verdeOscuro: "#008445",
-  verdeSuave: "#e3f6e9",
-  gris: "#c3c3c3",
-  grisSuave: "#eef0f5",
-  texto: "#1f2933",
-  textoSuave: "#6b7280",
-  error: "#d32f2f",
-  errorSuave: "#fdecea"
-};
 
 const ICONO_LOTE = require("../../../assets/land-plots.png");
 const ICONO_ACTIVIDAD = require("../../../assets/sprout.png");
@@ -213,9 +197,10 @@ export default function ActividadesLoteScreen({ navigation }: Props) {
     }
   };
 
-  // popTo regresa a la Inicio existente (navigate abriría una nueva encima, sin
-  // quitar esta pantalla ni disparar la confirmación de cambios sin guardar).
-  const regresar = () => navigation.popTo("Inicio");
+  // goBack regresa a la pantalla anterior (Inicio, o Actividades en nave si se
+  // llegó desde ahí) y dispara la confirmación de cambios sin guardar;
+  // navigate("Inicio") abriría otra Inicio encima.
+  const regresar = () => navigation.goBack();
 
   // Igual que el Header anterior: se limpia el empleado escaneado al salir,
   // solo cuando la pantalla realmente se cierra.
@@ -292,9 +277,11 @@ export default function ActividadesLoteScreen({ navigation }: Props) {
           </Pressable>
         </View>
         {avances.map((a) => (
-          <FilaAvance
+          <FilaSeleccionable
             key={claveAvance(a)}
-            avance={a}
+            codigo={`${a.cod_actividad}-${a.cod_avance}`}
+            nombre={a.nom_actividad}
+            icono={ICONO_ACTIVIDAD}
             seleccionado={valorActual(a)}
             modificado={!!pendientes[claveAvance(a)]}
             deshabilitado={guardando}
@@ -307,31 +294,14 @@ export default function ActividadesLoteScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.container} edges={["bottom", "left", "right"]}>
-      <LinearGradient
-        colors={[COLORES.verde, COLORES.verdeOscuro]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.encabezado}
-      >
-        <SafeAreaView edges={["top"]}>
-          <View style={styles.filaEncabezado}>
-            <Pressable
-              onPress={regresar}
-              hitSlop={8}
-              style={({ pressed }) => [styles.botonRegresar, pressed && { opacity: 0.7 }]}
-            >
-              <Image source={require("../../../assets/arrow-left.png")} style={styles.iconoRegresar} />
-            </Pressable>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.titulo}>Actividades en lote</Text>
-              <Text style={styles.subtitulo}>Marca las actividades que se trabajarán</Text>
-            </View>
-          </View>
-        </SafeAreaView>
-      </LinearGradient>
+      <EncabezadoVerde
+        titulo="Actividades en lote"
+        subtitulo="Marca las actividades que se trabajarán"
+        onRegresar={regresar}
+      />
 
-      <View style={styles.selectores}>
-        <Selector
+      <TarjetaSelectores>
+        <SelectorPaso
           paso="1"
           etiqueta="Lote"
           icono={ICONO_LOTE}
@@ -340,7 +310,7 @@ export default function ActividadesLoteScreen({ navigation }: Props) {
           deshabilitado={guardando}
           onPress={() => setModal("lote")}
         />
-        <Selector
+        <SelectorPaso
           paso="2"
           etiqueta="Actividad"
           icono={ICONO_ACTIVIDAD}
@@ -349,20 +319,10 @@ export default function ActividadesLoteScreen({ navigation }: Props) {
           deshabilitado={guardando || !lote || actividades.length === 0}
           onPress={() => setModal("actividad")}
         />
-      </View>
+      </TarjetaSelectores>
 
       <ScrollView contentContainerStyle={styles.contenido} showsVerticalScrollIndicator={false}>
-        {aviso && (
-          <View style={[styles.aviso, aviso.tipo === "ok" ? styles.avisoOk : styles.avisoError]}>
-            <Image
-              source={aviso.tipo === "ok" ? require("../../../assets/check-bold.png") : require("../../../assets/close.png")}
-              style={[styles.iconoAviso, { tintColor: aviso.tipo === "ok" ? COLORES.verdeOscuro : COLORES.error }]}
-            />
-            <Text style={[styles.textoAviso, { color: aviso.tipo === "ok" ? COLORES.verdeOscuro : COLORES.error }]}>
-              {aviso.texto}
-            </Text>
-          </View>
-        )}
+        {aviso && <AvisoResultado tipo={aviso.tipo} texto={aviso.texto} />}
         {renderContenido()}
       </ScrollView>
 
@@ -409,160 +369,10 @@ export default function ActividadesLoteScreen({ navigation }: Props) {
   );
 }
 
-type SelectorProps = {
-  paso: string;
-  etiqueta: string;
-  icono: ImageSourcePropType;
-  valor: OpcionSelector | null;
-  placeholder: string;
-  deshabilitado?: boolean;
-  onPress: () => void;
-};
-
-function Selector({ paso, etiqueta, icono, valor, placeholder, deshabilitado, onPress }: SelectorProps) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={deshabilitado}
-      style={({ pressed }) => [
-        styles.selector,
-        !!valor && styles.selectorElegido,
-        deshabilitado && { opacity: 0.5 },
-        pressed && { opacity: 0.8 }
-      ]}
-    >
-      <View style={[styles.circuloSelector, { backgroundColor: valor ? COLORES.verdeSuave : COLORES.grisSuave }]}>
-        <Image
-          source={icono}
-          style={[styles.iconoSelector, { tintColor: valor ? COLORES.verdeOscuro : COLORES.textoSuave }]}
-        />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.etiquetaSelector}>
-          {paso} · {etiqueta}
-        </Text>
-        <Text style={[styles.valorSelector, !valor && { color: COLORES.textoSuave }]} numberOfLines={1}>
-          {valor ? `${valor.codigo} · ${valor.nombre}` : placeholder}
-        </Text>
-      </View>
-      <Image source={require("../../../assets/arrow-left.png")} style={styles.flecha} />
-    </Pressable>
-  );
-}
-
-function EstadoVacio({ icono, titulo, texto }: { icono: ImageSourcePropType; titulo: string; texto: string }) {
-  return (
-    <View style={styles.vacio}>
-      <View style={styles.circuloVacio}>
-        <Image source={icono} style={styles.iconoVacio} />
-      </View>
-      <Text style={styles.tituloVacio}>{titulo}</Text>
-      <Text style={styles.textoVacio}>{texto}</Text>
-    </View>
-  );
-}
-
-const sombra = {
-  elevation: 2,
-  shadowColor: "#000",
-  shadowOpacity: 0.06,
-  shadowRadius: 8,
-  shadowOffset: { width: 0, height: 2 }
-};
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORES.fondo
-  },
-  encabezado: {
-    paddingHorizontal: 16,
-    paddingBottom: 44,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24
-  },
-  filaEncabezado: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingTop: 12
-  },
-  botonRegresar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: "rgba(255,255,255,0.2)",
-    alignItems: "center",
-    justifyContent: "center"
-  },
-  iconoRegresar: {
-    width: 22,
-    height: 22,
-    tintColor: "#ffffff",
-    resizeMode: "contain"
-  },
-  titulo: {
-    color: "#ffffff",
-    fontSize: 20,
-    fontWeight: "700"
-  },
-  subtitulo: {
-    color: "rgba(255,255,255,0.85)",
-    fontSize: 13,
-    marginTop: 2
-  },
-  selectores: {
-    marginTop: -30,
-    marginHorizontal: 16,
-    backgroundColor: COLORES.tarjeta,
-    borderRadius: 18,
-    padding: 8,
-    gap: 4,
-    ...sombra
-  },
-  selector: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 10,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: "transparent"
-  },
-  selectorElegido: {
-    backgroundColor: "#f7fdf9"
-  },
-  circuloSelector: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12
-  },
-  iconoSelector: {
-    width: 22,
-    height: 22,
-    resizeMode: "contain"
-  },
-  etiquetaSelector: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: COLORES.textoSuave,
-    textTransform: "uppercase",
-    letterSpacing: 0.5
-  },
-  valorSelector: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: COLORES.texto,
-    marginTop: 2
-  },
-  flecha: {
-    width: 18,
-    height: 18,
-    tintColor: COLORES.textoSuave,
-    resizeMode: "contain",
-    transform: [{ rotate: "180deg" }],
-    marginLeft: 8
   },
   contenido: {
     padding: 16,
@@ -586,65 +396,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     color: COLORES.verdeOscuro
-  },
-  aviso: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 12,
-    borderWidth: 1
-  },
-  avisoOk: {
-    backgroundColor: COLORES.verdeSuave,
-    borderColor: COLORES.verde
-  },
-  avisoError: {
-    backgroundColor: COLORES.errorSuave,
-    borderColor: COLORES.error
-  },
-  iconoAviso: {
-    width: 18,
-    height: 18,
-    marginRight: 10,
-    resizeMode: "contain"
-  },
-  textoAviso: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: "600"
-  },
-  vacio: {
-    alignItems: "center",
-    paddingVertical: 40,
-    paddingHorizontal: 24
-  },
-  circuloVacio: {
-    width: 72,
-    height: 72,
-    borderRadius: 24,
-    backgroundColor: COLORES.verdeSuave,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 14
-  },
-  iconoVacio: {
-    width: 36,
-    height: 36,
-    tintColor: COLORES.verdeOscuro,
-    resizeMode: "contain"
-  },
-  tituloVacio: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: COLORES.texto,
-    textAlign: "center"
-  },
-  textoVacio: {
-    fontSize: 13,
-    color: COLORES.textoSuave,
-    textAlign: "center",
-    marginTop: 4
   },
   pie: {
     paddingHorizontal: 16,
