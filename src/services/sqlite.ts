@@ -504,7 +504,9 @@ export async function BuscarEmpleadoPorCodigo(codEmpleado: string) {
   
 }
 
-export async function SeleccionarActEnNaves(codLote: string, codNave:string, fecha: string,semana : string) :Promise<IdatosActividadesNaves[]>{
+// propagarError: lanza el error en lugar de devolver [], para distinguir "sin
+// filas" de "falló la consulta".
+export async function SeleccionarActEnNaves(codLote: string, codNave:string, fecha: string,semana : string, propagarError = false) :Promise<IdatosActividadesNaves[]>{
     try{
 
         const database = await getDB();
@@ -532,6 +534,7 @@ export async function SeleccionarActEnNaves(codLote: string, codNave:string, fec
   catch(error: any)
   {
      console.log(error.message)
+    if (propagarError) throw error;
     return [];
    
   }

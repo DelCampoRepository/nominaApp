@@ -51,10 +51,13 @@ export default function ActividadesNaveScreen({ navigation }: Props) {
   const pendientesRef = useRef(pendientes);
   pendientesRef.current = pendientes;
   const [guardando, setGuardando] = useState(false);
+  const [refrescando, setRefrescando] = useState(false);
   const [aviso, setAviso] = useState<{ tipo: "ok" | "error"; texto: string } | null>(null);
   const [modal, setModal] = useState<"lote" | "nave" | null>(null);
 
   const totalPendientes = Object.keys(pendientes).length;
+  // Bloquea selección y guardado mientras se guarda o se revisan los datos.
+  const ocupado = guardando || refrescando;
 
   useEffect(() => {
     obtenerListaLotesxUsuarioSqLite().then(setLotes);
@@ -100,7 +103,7 @@ export default function ActividadesNaveScreen({ navigation }: Props) {
     setCargando(true);
     try {
       const semana = await ConsultarSemanaActiva();
-      const datos = await SeleccionarActEnNaves(codLote, codNave, obtenerFecha(), semana);
+      const datos = await SeleccionarActEnNaves(codLote, codNave, obtenerFecha(), semana, true);
       if (id !== consultaActual.current) return;
       setActividades(
         datos.filter((a) => a.cod_lote === codLote && a.cod_nave === codNave)
@@ -129,25 +132,34 @@ export default function ActividadesNaveScreen({ navigation }: Props) {
   const refrescarAlEnfocar = async () => {
     const l = loteRef.current;
     if (!l || guardandoRef.current) return;
+    // Mientras se revisa, se bloquean filas y guardado para no trabajar con
+    // datos que pueden ya no existir.
+    setRefrescando(true);
     try {
-      const navesConPendientes = [
+      const navesRevisadas = [
         ...new Set(Object.values(pendientesRef.current).map((p) => p.cod_nave))
       ];
-      if (navesConPendientes.length > 0) {
+      if (navesRevisadas.length > 0) {
         const semana = await ConsultarSemanaActiva();
         const fecha = obtenerFecha();
         const existentes = new Set<string>();
-        for (const codNave of navesConPendientes) {
-          const filas = await SeleccionarActEnNaves(l.codigo, codNave, fecha, semana);
+        for (const codNave of navesRevisadas) {
+          const filas = await SeleccionarActEnNaves(l.codigo, codNave, fecha, semana, true);
           filas.forEach((f) => existentes.add(claveFila(f)));
         }
+        // Solo se descartan pendientes de las naves que se revisaron.
         setPendientes((prev) =>
-          Object.fromEntries(Object.entries(prev).filter(([clave]) => existentes.has(clave)))
+          Object.fromEntries(
+            Object.entries(prev).filter(
+              ([clave, p]) => !navesRevisadas.includes(p.cod_nave) || existentes.has(clave)
+            )
+          )
         );
       }
     } catch {
-      // Si falla la consulta se conservan los pendientes; al guardar se
-      // reporta el error.
+      // Si falla la consulta se conservan los pendientes.
+    } finally {
+      setRefrescando(false);
     }
     const n = naveRef.current;
     if (n) cargarActividades(l.codigo, n.codigo);
@@ -222,7 +234,7 @@ export default function ActividadesNaveScreen({ navigation }: Props) {
   const todasSeleccionadas = actividades.length > 0 && seleccionadas === actividades.length;
 
   const guardar = async () => {
-    if (!lote || guardando || totalPendientes === 0) return;
+    if (!lote || ocupado || totalPendientes === 0) return;
     setGuardando(true);
     setAviso(null);
     try {
@@ -331,12 +343,12 @@ export default function ActividadesNaveScreen({ navigation }: Props) {
           </Text>
           <Pressable
             hitSlop={8}
-            disabled={guardando}
+            disabled={ocupado}
             onPress={() =>
               fijarSeleccion(actividades.map((a) => ({ fila: a, valor: !todasSeleccionadas })))
             }
           >
-            <Text style={[styles.enlace, guardando && { opacity: 0.4 }]}>
+            <Text style={[styles.enlace, ocupado && { opacity: 0.4 }]}>
               {todasSeleccionadas ? "Quitar todo" : "Seleccionar todo"}
             </Text>
           </Pressable>
@@ -349,7 +361,7 @@ export default function ActividadesNaveScreen({ navigation }: Props) {
             icono={ICONO_ACTIVIDAD}
             seleccionado={valorActual(a)}
             modificado={!!pendientes[claveFila(a)]}
-            deshabilitado={guardando}
+            deshabilitado={ocupado}
             onPress={() => fijarSeleccion([{ fila: a, valor: !valorActual(a) }])}
           />
         ))}
@@ -372,7 +384,7 @@ export default function ActividadesNaveScreen({ navigation }: Props) {
           icono={ICONO_LOTE}
           valor={lote}
           placeholder="Seleccionar lote"
-          deshabilitado={guardando}
+          deshabilitado={ocupado}
           onPress={() => setModal("lote")}
         />
         <SelectorPaso
@@ -381,7 +393,7 @@ export default function ActividadesNaveScreen({ navigation }: Props) {
           icono={ICONO_NAVE}
           valor={nave}
           placeholder={lote ? "Seleccionar nave" : "Primero elige un lote"}
-          deshabilitado={guardando || !lote || naves.length === 0}
+          deshabilitado={ocupado || !lote || naves.length === 0}
           onPress={() => setModal("nave")}
         />
       </TarjetaSelectores>
@@ -405,7 +417,7 @@ export default function ActividadesNaveScreen({ navigation }: Props) {
             contentStyle={{ height: 50 }}
             labelStyle={{ fontSize: 16, fontWeight: "700" }}
             loading={guardando}
-            disabled={guardando}
+            disabled={ocupado}
             onPress={guardar}
           >
             {guardando ? "Guardando…" : `Guardar cambios (${totalPendientes})`}

@@ -153,11 +153,16 @@ export default function HomeScreen({ navigation }: Props) {
     ]).start();
   }, []);
 
-  useEffect(() => {
-    // Inicio es la raíz después del login: el botón atrás no regresa a Login/Loading.
-    const backHandler = BackHandler.addEventListener("hardwareBackPress", () => true);
-    return () => backHandler.remove();
-  }, []);
+  // Inicio es la raíz después del login: el botón atrás no regresa a
+  // Login/Loading. Solo mientras Inicio está en pantalla; si se registrara al
+  // montar, seguiría activo debajo de las demás pantallas y bloquearía su botón
+  // atrás.
+  useFocusEffect(
+    useCallback(() => {
+      const backHandler = BackHandler.addEventListener("hardwareBackPress", () => true);
+      return () => backHandler.remove();
+    }, [])
+  );
 
   const salir = () => {
     Alert.alert("Cerrar sesión", "¿Desea salir de la aplicación?", [
@@ -167,7 +172,9 @@ export default function HomeScreen({ navigation }: Props) {
         style: "destructive",
         onPress: async () => {
           await HandleSalir();
-          navigation.navigate("Login");
+          // reset deja Login como única pantalla: con navigate quedaría encima
+          // de Inicio y el botón atrás regresaría a ella.
+          navigation.reset({ index: 0, routes: [{ name: "Login" }] });
         }
       }
     ]);
