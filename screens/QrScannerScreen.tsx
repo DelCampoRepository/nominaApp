@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { StyleSheet, View, Text, Button } from "react-native";
+import { StyleSheet, View, Text, Button, Alert } from "react-native";
 import {
   CameraView,
   useCameraPermissions,
@@ -40,17 +40,22 @@ export default function QrScannerScreen({ navigation }: Props) {
 
   const onScan = async (res: BarcodeScanningResult) => {
     if (scanned) return;
-    {
-      async function buscar(cod: string) {
-        const nom: any = await buscarNombreEmpleado(cod);
-        console.log("res");
-        setNombreEmpleado(nom[0].Nom_empleado);
-        navigation.goBack();
-      }
-      buscar(res.data.substring(0, 6));
-      setScanned(true);
-      setEmployeeCode(res.data.substring(0, 6));
+    setScanned(true);
+    const cod = res.data.substring(0, 6);
+    const nom: any[] | undefined = await buscarNombreEmpleado(cod);
+    // Si el código no está en la lista local se avisa y se permite escanear de
+    // nuevo (antes nom[0] era undefined y la app se cerraba).
+    if (!nom || nom.length === 0) {
+      Alert.alert(
+        "Empleado no encontrado",
+        `El código ${cod} no está en la lista de empleados. Sincroniza Empleados o verifica la credencial.`,
+        [{ text: "Escanear otra vez", onPress: () => setScanned(false) }]
+      );
+      return;
     }
+    setEmployeeCode(cod);
+    setNombreEmpleado(nom[0].Nom_empleado);
+    navigation.goBack();
   };
 
   return (
