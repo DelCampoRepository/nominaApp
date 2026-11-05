@@ -1,7 +1,6 @@
 
 import { View,StyleSheet, Text, SectionList,Image } from "react-native"
 import { useEffect, useState } from "react";
-import { fecha } from "../../../src/utils/GenerarFecha";
 import { ConsultarSemanaActiva } from "../../../src/utils/ObtenerSemanaActiva";
 import { SeleccionarAvancesEmpleadosASyncronizar } from "../../../src/services/sqlite";
 import { CustomTableRow } from "./CustomTableRow";
@@ -14,6 +13,7 @@ type props={
  
   }
 
+
 interface ISeccionAvance {
   title: string;
   codAcv:string;
@@ -21,6 +21,15 @@ interface ISeccionAvance {
   total: number;
 }   
 
+export const obtenerFechaHoy = (): string => {
+    const hoy = new Date();
+
+    const anio = hoy.getFullYear();
+    const mes = String(hoy.getMonth() + 1).padStart(2, "0");
+    const dia = String(hoy.getDate()).padStart(2, "0");
+
+    return `${anio}-${mes}-${dia}`;
+};
 
 export const CustomTable =({codLote,codNave}:props) => {
 
@@ -29,10 +38,11 @@ const [sections, setSections] = useState<ISeccionAvance[]>([]);
 useEffect(() => {
   const cargarDatos = async () => {
     const semana = await ConsultarSemanaActiva();
-    console.log(fecha)
+        console.log();
+       
     const datos = await SeleccionarAvancesEmpleadosASyncronizar(
       semana,
-      fecha
+      obtenerFechaHoy()
     );
 
 

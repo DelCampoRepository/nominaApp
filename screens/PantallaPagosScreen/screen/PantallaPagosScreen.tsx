@@ -16,6 +16,7 @@ import { ObtenerEmpleadosNomina } from "../../../src/services/ObtenerAvanceEmple
 import { IrespuestaAvancesNomina } from "../../../src/services/IrespuestaAvancesNomina";
 import { CustomTable } from "../components/CustomTable";
 import ModalFiltros from "../components/ModalFiltros";
+import { avisarSinInternet, hayInternet } from "../../../src/utils/conexion";
 type Props = NativeStackScreenProps<RootStackParamList, "Pagos">
 
 export default function PatallaPagosScreen({ navigation }: Props) {
@@ -73,7 +74,14 @@ async function handleConsultar() {
              alert("Por favor seleccione jefe de nave");
              return;
            }
-     
+
+           // Se avisa aqui para no mostrar ademas "Ocurrió un error al
+           // obtener los avances" del catch.
+           if (!(await hayInternet())) {
+             avisarSinInternet();
+             return;
+           }
+
            const semana = await ConsultarSemanaActiva();
            const fechaConsulta = generarFechaConsulta();
           

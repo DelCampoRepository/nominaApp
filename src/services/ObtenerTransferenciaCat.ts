@@ -14,9 +14,9 @@ export async function ObtenerTransferenciaCat(data: IconsultaTransferenciaCat): 
 
     }catch(error : any){
         console.log("Error en ObtenerTransferenciaCat: ", error);
-    return [ {
-        cod_empleado:"N/A",
-            Nom_empleado:"N/A",
-     }]
+        // Antes devolvia un empleado falso "N/A": sin internet, Loading y
+        // Transferir borraban la lista local de empleados e insertaban ese
+        // registro. Con [] los llamadores conservan la lista actual.
+        return [];
     }
 }

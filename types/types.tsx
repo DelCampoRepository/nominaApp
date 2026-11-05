@@ -29,6 +29,7 @@ export type RootStackParamList = {
     unidad: string;
   };
   Pagos: undefined;
+  EmpleadosSeleccionados: undefined;
 
   Header: { headerText: string; navigateTo: string };
 };

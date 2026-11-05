@@ -18,7 +18,7 @@ import { ConsultarSemanaActiva } from "../../../src/utils/ObtenerSemanaActiva";
 import { CustomTable } from "../components/CustomTable";
 import ModalBuscarEmpleados from "../components/ModalBuscaEmpleado";
 import ModalDatosManual from "../components/modalDatosManual";
-import { fecha } from "../../../src/utils/GenerarFecha";
+import { obtenerFecha } from "../../../src/utils/GenerarFecha";
 //import { CustomTable } from "../components/CustomTable";
 
 
@@ -161,7 +161,7 @@ async function handleSubmit(codEmpleado:string, nombre:string){
           emp.cod_empleado === codEmpleado &&
           emp.cod_lote === datosLote.codLote &&
           emp.cod_nave === datosNave.codNave &&
-          emp.FechaRegistro === fecha
+          emp.FechaRegistro === obtenerFecha()
       );
 
       //si existe, retornamos
@@ -183,12 +183,23 @@ async function handleSubmit(codEmpleado:string, nombre:string){
           Nom_empleado: nombreEmpleado,
           cod_lote: datosLote.codLote,
           cod_nave: datosNave.codNave,
-          FechaRegistro: fecha,
+          FechaRegistro: obtenerFechaHoy(),
           semana: semana
         }
       ];
     });
   }
+
+  const obtenerFechaHoy = (): string => {
+    const hoy = new Date();
+
+    const anio = hoy.getFullYear();
+    const mes = String(hoy.getMonth() + 1).padStart(2, "0");
+    const dia = String(hoy.getDate()).padStart(2, "0");
+
+    return `${anio}-${mes}-${dia}`;
+};
+
      
   async function guardar() {
   

@@ -1,6 +1,20 @@
 import "react-native-gesture-handler";
 import "react-native-reanimated";
 
+import { Text, TextInput } from "react-native";
+
+// Algunos usuarios activan "texto grande" o "negritas" en la configuracion de
+// accesibilidad del dispositivo. React Native escala el fontSize de todos los
+// <Text>/<TextInput> segun esa config., lo que desborda los textos de las
+// cards/tablas de esta app (pensadas para un tamano fijo). Se desactiva ese
+// escalado globalmente para que el tamano de letra siempre sea el definido
+// en los estilos, sin importar la configuracion del dispositivo.
+(Text as any).defaultProps = (Text as any).defaultProps || {};
+(Text as any).defaultProps.allowFontScaling = false;
+
+(TextInput as any).defaultProps = (TextInput as any).defaultProps || {};
+(TextInput as any).defaultProps.allowFontScaling = false;
+
 import React, { useEffect } from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
@@ -12,30 +26,36 @@ import { theme } from "./screens/theme";
 import { RootStackParamList } from "./types/types";
 
 //import HomeScreen from "./screens/HomeScreen";
-import QrScannerScreen from "./screens/QrScannerScreen";
 //import EmpleadosScreen from "./screens/EmpleadosScreen";
+//import ListaEmpleadosScreen from "./screens/ListaEmpleadosScreen";
+//import ActividadesLoteScreen from "./screens/ActividadesLoteScreen";
+//import ActividadesNaveScreen from "./screens/ActividadesNaveScreen";
+//import ListaNavesScreen from "./screens/ListaNavesScreen";
+//import AvancesSCreen from "./screens/AvancesScreen";
+//import AvancesxActividadesScreen from "./screens/AvancesxActividadesScreen";
+//import PatallaPagos from "./screens/PantallaPagos";
+
+import QrScannerScreen from "./screens/QrScannerScreen";
+
 import EmpleadosScreen from "./screens/EmpleadosScreen/screen/EmpleadosScreen";
 import LoginScreen from "./screens/LoginScreen";
-import ListaEmpleadosScreen from "./screens/ListaEmpleadosScreen";
 
-import ListaNavesScreen from "./screens/ListaNavesScreen";
 import ActividadesLoteScreen from "./screens/ActividadesLoteScreen/screen/ActividadesLotesScreen";
 import ActividadesNaveScreen from "./screens/ActividadesNaveScreen/screen/ActividadesNaveScreen";
 import HomeScreen from "./screens/HomeScreen/screen/HomeScreen";
 import AvancesxActividadesScreen from "./screens/AvancesPorActividadScreen/screen/AvancesxActividadesScreen";
-//import ActividadesLoteScreen from "./screens/ActividadesLoteScreen";
-//import ActividadesNaveScreen from "./screens/ActividadesNaveScreen";
+
 import AvancesScreen from "./screens/AvancesScreen/screen/AvancesScreen";
 import ReporteAvancesScreen from "./screens/ReportesScreen/screen/ReporteAvancesScreen"
 import TransferirScreen from "./screens/TrasferirScreen";
-//import AvancesSCreen from "./screens/AvancesScreen";
+
 import { EmployeeProvider } from "./src/context/QrContext";
 import { NaveProvider } from "./src/context/NaveContext";
 import { UsuarioProvider } from "./src/context/userContext";
 import LoadingScreen from "./screens/LoadingScreen";
-//import AvancesxActividadesScreen from "./screens/AvancesxActividadesScreen";
-import PatallaPagos from "./screens/PantallaPagos";
+
 import PatallaPagosScreen from "./screens/PantallaPagosScreen/screen/PantallaPagosScreen";
+import EmpleadosSeleccionadosScreen from "./screens/EmpleadosSeleccionadosScreen/screen/EmpleadosSeleccionadosScreen";
 const Stack = createNativeStackNavigator<RootStackParamList>(); // ← GENÉRICO OBLIGATORIO
 
 export default function App() {
@@ -81,16 +101,22 @@ export default function App() {
                         options={{ gestureEnabled: false }}
                       />
                       <Stack.Screen name="Login" component={LoginScreen} />
-                      <Stack.Screen
+                      {/*<Stack.Screen
                         name="ListaEmpleados"
                         component={ListaEmpleadosScreen}
                         options={{ gestureEnabled: false }}
                       ></Stack.Screen>
+                      
                       <Stack.Screen
                         name="ListaNaves"
                         component={ListaNavesScreen}
                         options={{ gestureEnabled: false }}
                       ></Stack.Screen>
+                      
+                      */
+                      
+                      }
+                      
                       <Stack.Screen
                         name="ActividadesLote"
                         component={ActividadesLoteScreen}
@@ -119,6 +145,11 @@ export default function App() {
                       <Stack.Screen
                         name="AvancesxActividad"
                         component={AvancesxActividadesScreen}
+                        options={{ gestureEnabled: false }}
+                      ></Stack.Screen>
+                      <Stack.Screen
+                        name="EmpleadosSeleccionados"
+                        component={EmpleadosSeleccionadosScreen}
                         options={{ gestureEnabled: false }}
                       ></Stack.Screen>
                     </Stack.Navigator>

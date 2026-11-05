@@ -4,7 +4,6 @@ import { CustomTableRow } from "./CustomTableRow";
 import { useEffect, useState } from "react";
 import { IdatosActividadesNaves } from "../../../src/interfaces/local/IdatosActNave";
 
-import { fecha } from "../../../src/utils/GenerarFecha";
 import { ConsultarSemanaActiva } from "../../../src/utils/ObtenerSemanaActiva";
 import { actualizarActEnNave } from "../../../src/services/sqlite";
 import { SeleccionarActividadesNave } from "../../../src/services/sqlite";

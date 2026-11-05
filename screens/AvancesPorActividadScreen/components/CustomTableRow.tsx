@@ -59,7 +59,7 @@ const handleOnButtonPress = () => {
             </View>
             <Text style={{marginRight:10}}>Avance </Text>
           </View>
-
+            
           <View style={{flexDirection:"row", justifyContent:"space-between"}}>
             <View style={{}} > 
               <Text style={{marginVertical:"auto", marginLeft: 5 }}>{capitalizar(avance.nom_empleado.toLowerCase())}</Text>

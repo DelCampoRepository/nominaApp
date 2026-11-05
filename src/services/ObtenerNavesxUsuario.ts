@@ -2,6 +2,7 @@ import { IConsultaObtenerNavesxUsuario } from "../interfaces/IConsultaObtenerNav
 import { IRespuestaObtenerNavesxUsuario } from "../interfaces/IRespuestaObtenerNavesxUsuario";
 import api from "../api";
 import { Alert } from "react-native";
+import { esSinInternet } from "../utils/conexion";
 
 export async function obtenerListaNavesxUsuario(datos: IConsultaObtenerNavesxUsuario) :  Promise<IRespuestaObtenerNavesxUsuario[]>{
 
@@ -18,7 +19,9 @@ export async function obtenerListaNavesxUsuario(datos: IConsultaObtenerNavesxUsu
             else
                 return[]
         }catch(error:any){
-             Alert.alert('Error capturado',error.message)
+             // Sin internet o sin respuesta: el interceptor de api ya aviso.
+             if (!esSinInternet(error) && error?.response)
+               Alert.alert('Error capturado', String(error?.message))
             return[]
         }
 

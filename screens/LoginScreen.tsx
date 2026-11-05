@@ -10,171 +10,265 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../types/types";
 import { AuthContext } from "../src/context/AuthContext";
 import { useUser } from "../src/context/userContext";
-import { useState, useContext } from "react";
+import { useState, useContext, useCallback } from "react";
 import { useLogin } from "../src/hooks/useLogin";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   obtenerSemanaActivaSqLite,
   GuardarDatosUsuario,
-  EliminarDatosUsuario,
   SeleccionarDatosUsuario,
   initDB,
-  verificarTablas,
-  BorraroRegistrosTodasLasTablas,
-  limpiarTablaAvances
+  validarCambioDeDia
 } from "../src/services/sqlite";
-import { eliminarDatos } from "../src/services/local/guardarListaDeEmpleadosEnDbLocal";
 import { IdatosEmpleadoNoInternet } from "../src/interfaces/local/IDatosUsuarioNoInternet";
+import {
+  avisarSinInternet,
+  esSinInternet,
+  hayInternet
+} from "../src/utils/conexion";
+
 type Props = NativeStackScreenProps<RootStackParamList, "Login">;
+
+type RespuestaLogin = {
+  success: boolean;
+  estado?: any;
+  idu_usuario?: any;
+  mensaje?: any;
+  nom_usuario?: any;
+  semana_actual?: any;
+  user?: any;
+  token?: { token: any; expiration: any };
+};
+
+/**
+ * Logging centralizado. En producción `console.log` no se ve en ningún lado,
+ * así que si ya tienes Sentry/Bugsnag/otro, conecta aquí.
+ * Por ahora solo evita que el código quede regado con console.log sueltos.
+ */
+const logDebug = (...args: unknown[]) => {
+  if (__DEV__) {
+    console.log(...args);
+  }
+};
+
+/**
+ * Convierte el valor de expiración (string ISO, epoch numérico como string, etc.)
+ * a un timestamp numérico. Devuelve null si no se puede interpretar,
+ * para que el llamador decida tratarlo como "expirado" en vez de comparar
+ * contra NaN (que siempre da `false` y fue la causa del bug original).
+ */
+function parseExpiracion(valor: unknown): number | null {
+  if (valor === null || valor === undefined || valor === "") return null;
+
+  // Si ya viene como epoch numérico (ms), aceptarlo directamente.
+  if (typeof valor === "number" && !isNaN(valor)) return valor;
+
+  if (typeof valor === "string") {
+    // Epoch como string, ej "1755000000000"
+    if (/^\d+$/.test(valor.trim())) {
+      const asNumber = Number(valor);
+      if (!isNaN(asNumber)) return asNumber;
+    }
+
+    // El backend (.NET) manda la fecha con 7 digitos de fraccion de
+    // segundo -ticks de 100ns, ej "2026-09-04T19:06:27.3004347-07:00"-.
+    // El parser de fechas de JS solo admite 3 digitos (milisegundos); con
+    // mas digitos, Date(...) devuelve Invalid Date en motores como Hermes,
+    // y por eso esta funcion terminaba devolviendo null SIEMPRE, sin
+    // importar la hora real (expirado quedaba fijo en true). Se recorta la
+    // fraccion a 3 digitos antes de parsear.
+    const normalizado = valor.replace(/(\.\d{3})\d+/, "$1");
+    const parsed = new Date(normalizado).getTime();
+    if (!isNaN(parsed)) return parsed;
+  }
+
+  return null;
+}
 
 export default function LoginScreen({ navigation }: Props) {
   const { handleLogin, loading, error } = useLogin();
 
   const [datosUsuario, setDatosUsuario] = useState({
-    username: "nomina_sanluis",
-    password: "delcampo"
+    username: "fortega",
+    password: "220278"
   });
   const { login, logout } = useContext(AuthContext);
   const { setNombreUsuario, setIduUsuario } = useUser();
   const [passVisible, setPassVisible] = useState(false);
+
+  // Estado propio además de `loading` del hook: cubre también los pasos
+  // de SQLite (antes/después de la llamada de red), que no están dentro
+  // del `loading` de `useLogin`. Esto evita el doble-submit.
+  const [procesando, setProcesando] = useState(false);
+  const bloqueado = loading || procesando;
+
+  /**
+   * Guarda la sesión resultante de un login exitoso y navega a "Loading".
+   * Centraliza lo que antes estaba repetido 3 veces.
+   */
+  const procesarLoginExitoso = useCallback(
+    async (respuesta: RespuestaLogin, passwordUsado: string) => {
+      if (!respuesta.token?.token || !respuesta.token?.expiration) {
+        throw new Error("Respuesta de login incompleta: falta token o expiración.");
+      }
+
+      // GuardarDatosUsuario ahora borra la fila anterior e inserta la nueva
+      // dentro de una sola transaccion (ver sqlite.ts), asi que ya no hace
+      // falta llamar a EliminarDatosUsuario() por separado aqui.
+      await GuardarDatosUsuario({
+        estado: respuesta.estado,
+        idu_usuario: respuesta.idu_usuario,
+        mensaje: respuesta.mensaje,
+        nom_usuario: respuesta.nom_usuario,
+        semana_actual: respuesta.semana_actual,
+        token: respuesta.token.token,
+        expiration: respuesta.token.expiration,
+        user: respuesta.user,
+        contra: passwordUsado
+      });
+
+      setNombreUsuario(respuesta.nom_usuario);
+      setIduUsuario(respuesta.idu_usuario);
+      await login(String(respuesta.token.token));
+
+      navigation.navigate("Loading", {
+        nomUsuario: respuesta.nom_usuario,
+        semanaActiva: respuesta.semana_actual,
+        iduUser: respuesta.idu_usuario
+      });
+    },
+    [login, navigation, setNombreUsuario, setIduUsuario]
+  );
+
+  /**
+   * Hace login contra el backend y, si tiene éxito, guarda y navega.
+   * Si falla, muestra una alerta clara. Cualquier excepción se relanza
+   * para que el llamador (onSubmit) decida el mensaje según el contexto.
+   */
+  const loginRemotoYGuardar = useCallback(
+    async (username: string, password: string) => {
+      // Sin internet no se intenta: handleLogin devolveria null y se mostraria
+      // "usuario o contraseña incorrectos", que confunde al usuario.
+      if (!(await hayInternet())) {
+        avisarSinInternet();
+        return false;
+      }
+
+      const respuesta = await handleLogin({
+        nomCorto: username,
+        contra: password
+      });
+
+      if (respuesta?.success) {
+        await procesarLoginExitoso(respuesta, password);
+        return true;
+      }
+
+      Alert.alert(
+        "Error",
+        "No se han encontrado datos sobre este usuario, intente con otro usuario o contraseña."
+      );
+      return false;
+    },
+    [handleLogin, procesarLoginExitoso]
+  );
+
   const onSubmit = async () => {
-    if (
-      datosUsuario.username.trim() === "" ||
-      datosUsuario.password.trim() === ""
-    ) {
+    const username = datosUsuario.username.trim();
+    const password = datosUsuario.password;
+
+    if (username === "" || password.trim() === "") {
       Alert.alert("Error", "Por favor, ingrese usuario y contraseña");
       return;
     }
-    //  await BorraroRegistrosTodasLasTablas();
-    //const token = await AsyncStorage.getItem("token");
-    if (await initDB()) {
-      const datos: IdatosEmpleadoNoInternet[] = await SeleccionarDatosUsuario();
-      //await BorraroRegistrosTodasLasTablas();
-      if (datos.length > 0) {
-        const fechaExpiracion = new Date(datos[0].expiration);
 
-        const fechaActual = new Date();
-          console.log("Fecha Expiracion:", fechaExpiracion.toLocaleDateString());
-          console.log("Fecha Actual:", fechaActual.toLocaleDateString());
-        if (fechaActual.toLocaleDateString() !== fechaExpiracion.toLocaleDateString()) {
-            console.log(0)
-          Alert.alert(
-            "",
-            `el dia ha cambiado, se borraran los avances ${fechaActual} > ${fechaExpiracion}`
-          );
+    if (bloqueado) return; // evita doble-submit
 
-          await logout();
-          const respuesta = await handleLogin({
-            nomCorto: datosUsuario.username,
-            contra: datosUsuario.password
-          });
-
-          if (respuesta?.success) {
-            console.log(respuesta);
-            await EliminarDatosUsuario();
-            await GuardarDatosUsuario({
-              estado: respuesta.estado,
-              idu_usuario: respuesta.idu_usuario,
-              mensaje: respuesta.mensaje,
-              nom_usuario: respuesta.nom_usuario,
-              semana_actual: respuesta.semana_actual,
-              token: respuesta.token.token,
-              expiration: respuesta.token.expiration,
-              user: respuesta.user
-            });
-
-            setNombreUsuario(respuesta.nom_usuario);
-            setIduUsuario(respuesta.idu_usuario);
-            await login(String(respuesta.token.token));
-
-            navigation.navigate("Loading", {
-              nomUsuario: respuesta.nom_usuario,
-              semanaActiva: respuesta.semana_actual,
-              iduUser: respuesta.idu_usuario
-            });
-          }
-        } else if (datos[0].user !== datosUsuario.username) {
-          
-          await logout();
-          const respuesta = await handleLogin({
-            nomCorto: datosUsuario.username,
-            contra: datosUsuario.password
-          });
-
-          if (respuesta?.success) {
-            await EliminarDatosUsuario();
-            await GuardarDatosUsuario({
-              estado: respuesta.estado,
-              idu_usuario: respuesta.idu_usuario,
-              mensaje: respuesta.mensaje,
-              nom_usuario: respuesta.nom_usuario,
-              semana_actual: respuesta.semana_actual,
-              token: respuesta.token.token,
-              expiration: respuesta.token.expiration,
-              user: respuesta.user
-            });
-
-            setNombreUsuario(respuesta.nom_usuario);
-            setIduUsuario(respuesta.idu_usuario);
-            await login(String(respuesta.token.token));
-
-            navigation.navigate("Loading", {
-              nomUsuario: respuesta.nom_usuario,
-              semanaActiva: respuesta.semana_actual,
-              iduUser: respuesta.idu_usuario
-            });
-          }
-          else{
-               Alert.alert(
-            "Error",
-            "No se han encontrado datos sobre este ususario, intente con otro usuario o contraseña."
-          );
-          return;
-          }
-        } else {
-          console.log("Fecha Expiracion:", fechaExpiracion.toLocaleDateString());
-          console.log("Fecha Actual:", fechaActual.toLocaleDateString());
-          const semana: any = await obtenerSemanaActivaSqLite();
-
-          setNombreUsuario(datos[0].nom_usuario);
-          setIduUsuario(datos[0].idu_usuario);
-          navigation.navigate("Inicio");
-        }
-      } else {
-        const respuesta = await handleLogin({
-          nomCorto: datosUsuario.username,
-          contra: datosUsuario.password
-        });
-
-        if (respuesta?.success) {
-          await EliminarDatosUsuario();
-          await GuardarDatosUsuario({
-            estado: respuesta.estado,
-            idu_usuario: respuesta.idu_usuario,
-            mensaje: respuesta.mensaje,
-            nom_usuario: respuesta.nom_usuario,
-            semana_actual: respuesta.semana_actual,
-            token: respuesta.token.token,
-            expiration: respuesta.token.expiration,
-            user: respuesta.user
-          });
-
-          setNombreUsuario(respuesta.nom_usuario);
-          setIduUsuario(respuesta.idu_usuario);
-          await login(String(respuesta.token.token));
-
-          navigation.navigate("Loading", {
-            nomUsuario: respuesta.nom_usuario,
-            semanaActiva: respuesta.semana_actual,
-            iduUser: respuesta.idu_usuario
-          });
-        } else {
-          Alert.alert(
-            "Error",
-            "No se han encontrado datos sobre este ususario, intente con otro usuario o contraseña."
-          );
-        }
+    setProcesando(true);
+    try {
+      const dbLista = await initDB();
+      if (!dbLista) {
+        Alert.alert(
+          "Error",
+          "No se pudo inicializar la base de datos local. Intente de nuevo."
+        );
+        return;
       }
+
+      // Primer ingreso del dia: limpia lo capturado el dia anterior.
+      // Si ya se ingreso hoy, conserva los registros.
+      await validarCambioDeDia();
+
+      const datos: IdatosEmpleadoNoInternet[] = await SeleccionarDatosUsuario();
+
+      logDebug("auth check -> registros en tablaDatosUsuario:", datos.length, JSON.stringify(datos));
+
+      if (datos.length === 0) {
+        logDebug("auth check -> rama: SIN registro guardado, se fuerza login remoto");
+        await loginRemotoYGuardar(username, password);
+        return;
+      }
+
+      const registro = datos[0];
+      const expiracionMs = parseExpiracion(registro.expiration);
+      const ahoraMs = Date.now();
+      const expirado = expiracionMs === null || ahoraMs > expiracionMs;
+
+      logDebug(
+        "auth check ->",
+        "ahora:", ahoraMs,
+        "expiracion:", expiracionMs,
+        "expirado:", expirado,
+        "expiration raw:", registro.expiration,
+        "typeof:", typeof registro.expiration
+      );
+
+      if (expirado) {
+        if (expiracionMs === null) {
+          logDebug(
+            "Aviso: no se pudo interpretar la fecha de expiración guardada; se fuerza nuevo login."
+          );
+        }
+        logDebug("auth check -> rama: EXPIRADO, se fuerza login remoto");
+        await logout();
+        await loginRemotoYGuardar(username, password);
+        return;
+      }
+
+      logDebug(
+        "auth check -> comparando usuario ->",
+        "registro.user:", `[${registro.user}]`, "len:", registro.user?.length,
+        "username tipiado:", `[${username}]`, "len:", username.length
+      );
+
+      if (registro.user !== username) {
+        logDebug("auth check -> rama: USUARIO NO COINCIDE, se fuerza login remoto");
+        await logout();
+        await loginRemotoYGuardar(username, password);
+        return;
+      }
+
+      logDebug("auth check -> rama: SESION VALIDA, se entra directo a Inicio");
+
+      // Sesión local vigente y del mismo usuario: entrar sin llamar al backend.
+      logDebug("Fecha Expiracion:", new Date(expiracionMs).toLocaleString());
+      logDebug("Fecha Actual:", new Date(ahoraMs).toLocaleString());
+
+      // Se consulta igual (puede ser útil para otras pantallas), pero no bloquea el flujo.
+      await obtenerSemanaActivaSqLite();
+
+      setNombreUsuario(registro.nom_usuario);
+      setIduUsuario(registro.idu_usuario);
+      navigation.navigate("Inicio");
+    } catch (err) {
+      logDebug("Error en el flujo de login:", err);
+      // El aviso de "sin conexión" ya se mostró.
+      if (esSinInternet(err)) return;
+      Alert.alert(
+        "Error",
+        "Ocurrió un problema al iniciar sesión. Verifique su conexión e intente de nuevo."
+      );
+    } finally {
+      setProcesando(false);
     }
   };
 
@@ -183,7 +277,7 @@ export default function LoginScreen({ navigation }: Props) {
       source={require("../assets/chat2.png")}
       style={styles.background}
     >
-      {loading ? (
+      {bloqueado ? (
         <View
           style={{
             width: "80%",
@@ -245,6 +339,10 @@ export default function LoginScreen({ navigation }: Props) {
               mode="outlined"
               outlineColor="#008445"
               activeOutlineColor="#008445"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="username"
+              textContentType="username"
               right={<TextInput.Icon icon={require("../assets/account.png")} />}
               style={{ marginBottom: 15, backgroundColor: "#e5e9f497" }}
               onChangeText={(text: string) =>
@@ -258,6 +356,10 @@ export default function LoginScreen({ navigation }: Props) {
               secureTextEntry={!passVisible}
               outlineColor="#008445"
               activeOutlineColor="#008445"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="password"
+              textContentType="password"
               right={
                 <TextInput.Icon
                   icon={require("../assets/eye.png")}
@@ -269,7 +371,13 @@ export default function LoginScreen({ navigation }: Props) {
                 setDatosUsuario((prev) => ({ ...prev, password: text }))
               }
             />
-            <Button mode="contained" buttonColor="#008445" onPress={onSubmit}>
+            <Button
+              mode="contained"
+              buttonColor="#008445"
+              onPress={onSubmit}
+              disabled={bloqueado}
+              loading={bloqueado}
+            >
               Ingresar
             </Button>
           </View>

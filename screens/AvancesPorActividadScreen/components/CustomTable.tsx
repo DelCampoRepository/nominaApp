@@ -4,12 +4,13 @@ import { CustomTableRow } from "./CustomTableRow";
 import { useEffect, useState } from "react";
 import { ActualizarAvances } from "../../../src/services/sqlite";
 import { ConsultarSemanaActiva } from "../../../src/utils/ObtenerSemanaActiva";
-import { fecha } from "../../../src/utils/GenerarFecha";
 import { SeleccionarEmpleadosCapturados } from "../../../src/services/sqlite";
 import { IAvanceEmpleado } from "../../../src/interfaces/local/IAvanceEmpleado";
 import { Alert } from "react-native";
 import ModalAvanceGeneral from "./ModalAvanceGeneral";
 import ModalAgregarAvanceindividual from "./ModalAgregarAvanceIndividual";
+
+
 type props={
     
     codLote: string;
@@ -34,20 +35,32 @@ export const CustomTable =({setTotalAvance,setTotalJornal,codLote,codNave,coAct,
     codigo:"",
     nombre:""
   })
-  
+    
 useEffect(() => {
 
   async function obtenerEmpleados() {
          
     const semana = await ConsultarSemanaActiva();
+  
+    console.log(
+      codLote,
+      codNave,
+      obtenerFechaHoy(),
+      semana,
+      coAct,
+      codAv
+    )
+
+  console.log(obtenerFechaHoy())
     const Lista = await SeleccionarEmpleadosCapturados(
       codLote,
       codNave,
-      fecha,
+      obtenerFechaHoy(),
       semana,
       coAct,
       codAv
     );
+
     const empleados = Lista.map((emp) => ({
       cod_lote: codLote,
       cod_nave: codNave,
@@ -59,11 +72,11 @@ useEffect(() => {
       nom_empleado: emp.nom_empleado,
       avance: emp.avance,
       avanceA: emp.avanceA,
-      fecha: fecha,
-      semanaActiva: semana[0].semanaActiva
+      fecha:obtenerFechaHoy(),
+      semanaActiva: emp.semana
     }));
     
-          setAvancesEmpleado(empleados as IAvanceEmpleado[]);
+      setAvancesEmpleado(empleados as IAvanceEmpleado[]);
   }
     
   obtenerEmpleados();
@@ -81,18 +94,26 @@ useEffect(()=>{
   setTotalJornal(totalAvance/rendApli);
 },[AvancesEmpleado]);
 
+const obtenerFechaHoy = (): string => {
+    const hoy = new Date();
+
+    const anio = hoy.getFullYear();
+    const mes = String(hoy.getMonth() + 1).padStart(2, "0");
+    const dia = String(hoy.getDate()).padStart(2, "0");
+
+    return `${anio}-${mes}-${dia}`;
+};
 
 
-
-  const handleGuardar = async () => {
+const handleGuardar = async () => {
      const res= await ActualizarAvances(AvancesEmpleado);
      if (res)
       Alert.alert("","Se han actualizado los avances");
     else
       Alert.alert("Error","Error al intentar guardar los avances");
-  };
+};
 
- async function handleChange (avance:string)  {
+async function handleChange (avance:string)  {
     const semana =  await ConsultarSemanaActiva();
   setAvancesEmpleado(prev =>
     prev.map(emp =>

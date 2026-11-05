@@ -131,6 +131,7 @@ export async function initDB() {
         token TEXT,
         expiration TEXT,
         user TEXT,
+        contra TEXT,
         UNIQUE (token,user,semana_actual)
     );
     
@@ -192,7 +193,19 @@ export async function initDB() {
             seleccionado INTEGER DEFAULT 0,
             UNIQUE(cod_lote, cod_nave, cod_actividad, cod_avance)
         );
+
+      CREATE TABLE IF NOT EXISTS tablaControlDia (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            fecha TEXT
+        );
   `);
+
+  // Migracion: agrega la columna 'contra' si la tabla ya existia sin ella
+  try {
+    await database.execAsync(`ALTER TABLE tablaDatosUsuario ADD COLUMN contra TEXT;`);
+  } catch (error) {
+    // la columna ya existe, se ignora
+  }
 
   console.log("✅ Tabla listaActividadesPrincipales creada o ya existente");
   return true;
@@ -208,7 +221,7 @@ import {IAvancesNomina, IAvanceUI} from "../interfaces/IAvancesNomina";
 
 import { IJefeNave } from "../interfaces/local/IJefeNave";
 import { IMainActividades } from "../interfaces/local/IMainActividades";
-import { fecha } from "../utils/GenerarFecha";
+import { obtenerFecha } from "../utils/GenerarFecha";
 import { IActividadesAvancesSeleccionables } from "../interfaces/local/iActividadesAvancesSeleccionables";
 
 
@@ -401,65 +414,65 @@ export async function GuardarActEnNaves(
 
     const database = await getDB();
 
-   
-    await database.runAsync(
-      `DELETE FROM actividadesEnNaves
-       WHERE cod_lote = ?
-       AND fecha = ?
-       AND semanaActiva = ?`,
-      [codLote, fecha, semana]
-    );
-
-    const datos: any = await database.getAllAsync(
-      `SELECT  
-        A.cod_lote, 
-        A.cod_actividad, 
-        A.cod_avance, 
-        A.nom_actividad, 
-        B.cod_nave, 
-        B.Descripcion_nave,  
-        0 AS seleccionado,
-        ? AS fecha,
-        ? AS semanaActiva
-      FROM listaActividadesPrincipales A
-      INNER JOIN listaDeNavesxUsuario B 
-        ON A.cod_lote = B.cod_lote
-      WHERE 
-        A.cod_lote = ? 
-        AND A.selecionado = ?`,
-      [fecha, semana, codLote, 1]
-    );
-
-    for (let actividad of datos) {
-
+    // Antes: borraba TODO el lote/fecha/semana sin importar la nave, lo cual
+    // pisaba el 'seleccionado' que el usuario ya habia guardado por nave en
+    // ActividadesNaveScreen. Ahora solo se borran las filas cuya actividad ya
+    // no esta marcada como seleccionada en listaActividadesPrincipales para
+    // este lote (el usuario la deselecciono en ActividadesLoteScreen).
+    await database.withTransactionAsync(async () => {
       await database.runAsync(
-        `INSERT OR REPLACE INTO actividadesEnNaves
-        (
-          cod_lote , 
-          cod_actividad , 
-          cod_avance , 
-          nom_actividad ,  
-          cod_nave , 
-          Descripcion_nave ,  
-          seleccionado,
-          fecha,
-          semanaActiva
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          actividad.cod_lote,
-          actividad.cod_actividad,
-          actividad.cod_avance,
-          actividad.nom_actividad,
-          actividad.cod_nave,
-          actividad.Descripcion_nave,
-          actividad.seleccionado,
-          actividad.fecha,
-          actividad.semanaActiva
-        ]
+        `DELETE FROM actividadesEnNaves
+         WHERE cod_lote = ?
+         AND fecha = ?
+         AND semanaActiva = ?
+         AND NOT EXISTS (
+           SELECT 1
+           FROM listaActividadesPrincipales P
+           WHERE P.cod_lote = actividadesEnNaves.cod_lote
+           AND P.cod_actividad = actividadesEnNaves.cod_actividad
+           AND P.cod_avance = actividadesEnNaves.cod_avance
+           AND P.selecionado = 1
+         )`,
+        [codLote, fecha, semana]
       );
 
-    }
+      // Solo se insertan combinaciones actividad x nave que todavia no existen
+      // para este dia/semana, con seleccionado=0. Las que ya existen se dejan
+      // como estan para no pisar el 'seleccionado' guardado en
+      // ActividadesNaveScreen. Se compara por codigos y no por el UNIQUE de la
+      // tabla, que incluye nom_actividad/Descripcion_nave: si el nombre cambia
+      // (p. ej. al resincronizar actividades) se duplicaria la fila sin seleccion.
+      await database.runAsync(
+        `INSERT INTO actividadesEnNaves
+          (cod_lote, cod_actividad, cod_avance, nom_actividad, cod_nave,
+           Descripcion_nave, seleccionado, fecha, semanaActiva)
+        SELECT
+          A.cod_lote,
+          A.cod_actividad,
+          A.cod_avance,
+          A.nom_actividad,
+          B.cod_nave,
+          B.Descripcion_nave,
+          0,
+          ?,
+          ?
+        FROM listaActividadesPrincipales A
+        INNER JOIN listaDeNavesxUsuario B
+          ON A.cod_lote = B.cod_lote
+        WHERE A.cod_lote = ?
+          AND A.selecionado = 1
+          AND NOT EXISTS (
+            SELECT 1 FROM actividadesEnNaves E
+            WHERE E.cod_lote = A.cod_lote
+            AND E.cod_nave = B.cod_nave
+            AND E.cod_actividad = A.cod_actividad
+            AND E.cod_avance = A.cod_avance
+            AND E.fecha = ?
+            AND E.semanaActiva = ?
+          )`,
+        [fecha, semana, codLote, fecha, semana]
+      );
+    });
 
     return true;
 
@@ -674,6 +687,29 @@ export async function GuardarEmpleadosCapturados(dataEmpleados: IEmpleadoCaptura
   }
 }
 
+export async function SeleccionarTodosEmpleadosCapturados(): Promise<IEmpleadoCapturado[]> {
+  try {
+    const database = await getDB();
+
+    const datos = await database.getAllAsync<IEmpleadoCapturado>(
+      `SELECT
+        cod_empleado,
+        nom_empleado AS Nom_empleado,
+        cod_lote,
+        cod_nave,
+        fecha AS FechaRegistro,
+        semana
+      FROM tablaEmpleadosSeleccionados
+      ORDER BY id DESC`
+    );
+
+    return datos;
+  } catch (error: any) {
+    Alert.alert('', error.message);
+    return [];
+  }
+}
+
 export async function EliminarEmpleadosCapturados() {
   
      const database = await getDB();
@@ -682,7 +718,7 @@ export async function EliminarEmpleadosCapturados() {
     `DELETE FROM tablaEmpleadosSeleccionados`
   );
   
-  console.log('Se eliminaron EmpleadosDeLaSemana');
+ 
 }
 
 export async function SeleccionarEmpleadosCapturados(  codLote: string, codNave:string, fecha: string , semana : string, codAct: string, codAvance: string) {
@@ -707,10 +743,17 @@ export async function SeleccionarEmpleadosCapturados(  codLote: string, codNave:
           FROM tablaEmpleadosSeleccionados A
           LEFT JOIN tablaAvances AS B ON
           A.cod_lote = B.cod_lote AND
-          A.cod_empleado = B.cod_empleado
-          AND B.cod_actividad = ? AND B.cod_avance = ? AND A.cod_lote = B.cod_lote AND A.cod_nave = B.cod_nave
-          WHERE A.cod_lote = ? AND A.cod_nave = ? AND  A.fecha = ? AND A.semana = ? ORDER BY A.id ASC
-          `, [codAct, codAvance, codLote, codNave, fecha,  semana]
+          A.cod_empleado = B.cod_empleado AND
+          A.cod_nave = B.cod_nave AND
+          B.cod_actividad = ? 
+          AND B.cod_avance = ?
+           AND B.fecha = ?
+          WHERE
+            A.cod_lote = ? AND
+            A.cod_nave = ? AND
+            A.fecha = ? AND
+            A.semana = ? ORDER BY A.id ASC
+          `, [codAct, codAvance, fecha, codLote, codNave, fecha, semana]
         );
 
  
@@ -732,11 +775,17 @@ export async function GuardarDatosUsuario(datosUser: IdatosEmpleadoNoInternet ) 
 
   try{
     console.log('para guardar',datosUser)
-      const database = await getDB();
-      console.log('para guardar',datosUser)
-    
-      
-    const data=     await database.runAsync(
+    const database = await getDB();
+    console.log('para guardar',datosUser)
+
+    // Se envuelve en una transaccion para que el DELETE + INSERT sea atomico:
+    // si algo falla a la mitad, no se queda la tabla en un estado inconsistente
+    // (por ejemplo, borrada pero sin la fila nueva, o con una fila vieja que
+    // nunca se borro porque el DELETE fallo silenciosamente).
+    await database.withTransactionAsync(async () => {
+      await database.runAsync(`DELETE FROM tablaDatosUsuario`);
+
+      const data = await database.runAsync(
         `INSERT OR REPLACE  INTO tablaDatosUsuario
         (
           estado,
@@ -746,9 +795,10 @@ export async function GuardarDatosUsuario(datosUser: IdatosEmpleadoNoInternet ) 
           semana_actual,
           token,
           expiration,
-          user 
+          user,
+          contra
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           datosUser.estado,
           datosUser.idu_usuario,
@@ -757,12 +807,14 @@ export async function GuardarDatosUsuario(datosUser: IdatosEmpleadoNoInternet ) 
           datosUser.semana_actual,
           datosUser.token,
           datosUser.expiration,
-          datosUser.user
+          datosUser.user,
+          datosUser.contra
 
         ]
       );
       console.log(data.changes)
-  
+    });
+
     console.log('datos empleado guardados ')
     return true;
   }catch(error: any)
@@ -773,14 +825,20 @@ export async function GuardarDatosUsuario(datosUser: IdatosEmpleadoNoInternet ) 
 }
 
 export async function EliminarDatosUsuario() {
-  
-     const database = await getDB();
- 
-  const result = await database.getAllAsync(
-    `DELETE FROM tablaDatosUsuario`
-  );
-  
-  console.log('Se eliminaron datos usuario');
+  try {
+    const database = await getDB();
+
+    await database.runAsync(`DELETE FROM tablaDatosUsuario`);
+
+    console.log('Se eliminaron datos usuario');
+    return true;
+  } catch (error: any) {
+    // Antes esta funcion no tenia try/catch: si el DELETE fallaba (DB bloqueada,
+    // error de IO, etc.) la excepcion se propagaba sin control y podia dejar
+    // datos viejos sin borrar sin que el resto del flujo se enterara.
+    console.log(error.message);
+    return false;
+  }
 }
 
 export async function buscarNombreEmpleado(codEmpleado:string) {
@@ -833,8 +891,22 @@ export async function SeleccionarDatosUsuario() {
 
         const database = await getDB();
 
+        // IMPORTANTE: se agrega ORDER BY id DESC LIMIT 1.
+        // Antes era "SELECT * from tablaDatosUsuario" sin ORDER BY, y el
+        // codigo llamador tomaba datos[0] asumiendo que esa era la fila mas
+        // reciente. Sin ORDER BY, el orden de un SELECT no esta garantizado
+        // por SQL — puede variar entre versiones del motor SQLite (la que
+        // trae Expo Go vs. la que se compila en un build de produccion),
+        // lo cual explica que el mismo codigo se comportara distinto entre
+        // ambientes. Ademas, dado que "INSERT OR REPLACE" con la restriccion
+        // UNIQUE(token,user,semana_actual) casi nunca reemplaza de verdad
+        // (el token cambia en cada login), la tabla puede terminar con mas
+        // de una fila acumulada si EliminarDatosUsuario() no corre limpio
+        // antes del insert (doble-tap, crash a medio proceso, etc.).
+        // Con ORDER BY id DESC LIMIT 1 siempre se obtiene la sesion mas
+        // reciente sin importar cuantas filas viejas queden atras.
         const datos = await database.getAllAsync(
-          `SELECT  * from tablaDatosUsuario`
+          `SELECT * FROM tablaDatosUsuario ORDER BY id DESC LIMIT 1`
         );
          return datos as IdatosEmpleadoNoInternet[];
   }
@@ -896,7 +968,7 @@ export async function GuardarActividadesEnNave(ActivdadesNave: iNaveSeleccionada
       
       await database.runAsync(
         `INSERT OR REPLACE  INTO tablaActividadesEnNave
-        (
+        (ve
           cod_lote,
           cod_nave,
           desc_nave,
@@ -953,7 +1025,7 @@ const database = await getDB();
       B.Nom_Corto
       FROM actividadesEnNaves A INNER JOIN listaActividadesPrincipales B 
       ON A.cod_actividad = B.cod_actividad AND A.cod_avance = B.cod_avance AND A.cod_lote = B.cod_lote
-      WHERE A.cod_lote = ? AND  A.cod_nave = ? and A.semanaActiva = ? AND A.seleccionado = ? AND A.fecha = ?`, [codLote, codNave, semana, 1, fecha]
+      WHERE A.cod_lote = ? AND  A.cod_nave = ? and A.semanaActiva = ? AND A.seleccionado = ? AND A.fecha = ?`, [codLote, codNave, semana, 1, obtenerFecha()]
   );
 
 
@@ -1061,10 +1133,10 @@ export async function ActualizarAvances(listaEmpleadosAsentar: IAvanceEmpleado [
       empleado.fecha, 
       empleado.semanaActiva]
     )
-    console.log(res[0].existe )
+   
     const existe = res[0]?.existe
    if (existe === 1) {
-    console.log("Sí existe");
+   
 
       const result= await database.runAsync(
       `UPDATE  tablaAvances set  avance = ? , avanceA = ?  WHERE  
@@ -1281,9 +1353,51 @@ export async function limpiarTablaAvances() {
   console.log('Se eliminaron registros tablaAvances');
  }
  catch(error: any){
-   Alert.alert('', error.message) 
+   Alert.alert('', error.message)
    return;
  }
+}
+
+// Los datos capturados solo valen para el dia en curso: se deben sincronizar
+// ese mismo dia. Al primer ingreso de cada dia se limpian las tablas de
+// captura; los ingresos siguientes del mismo dia (aunque se cierre la app o
+// expire el token) conservan los registros. Devuelve true si se limpio.
+export async function validarCambioDeDia() {
+  const database = await getDB();
+  const hoy = obtenerFecha();
+
+  const control = await database.getFirstAsync<{ fecha: string }>(
+    `SELECT fecha FROM tablaControlDia WHERE id = 1`
+  );
+
+  if (control?.fecha === hoy) {
+    console.log('Mismo dia, se conservan los registros', hoy);
+    return false;
+  }
+
+  // Primera vez que corre esta version: solo se registra el dia, para no
+  // borrar lo que ya se haya capturado hoy antes de actualizar la app.
+  if (!control) {
+    await database.runAsync(
+      `INSERT OR REPLACE INTO tablaControlDia (id, fecha) VALUES (1, ?)`,
+      [hoy]
+    );
+    return false;
+  }
+
+  console.log('Dia nuevo, limpiando tablas de captura', control?.fecha, '->', hoy);
+  await database.withTransactionAsync(async () => {
+    await database.runAsync(`DELETE FROM tablaAvances`);
+    await database.runAsync(`DELETE FROM tablaEmpleadosSeleccionados`);
+    await database.runAsync(`DELETE FROM tablaActividadesEnNave`);
+    await database.runAsync(`DELETE FROM actividadesEnNaves`);
+    await database.runAsync(`DELETE FROM listaEmpleadosCapturadosLocal`);
+    await database.runAsync(
+      `INSERT OR REPLACE INTO tablaControlDia (id, fecha) VALUES (1, ?)`,
+      [hoy]
+    );
+  });
+  return true;
 }
 
 export async function verificarTablas() {

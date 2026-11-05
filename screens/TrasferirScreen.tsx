@@ -53,6 +53,7 @@ import { obtenerListaDeActividadesPorUsuario } from "../src/services/ObtenerActi
 import { useUser } from "../src/context/userContext";
 import dayjs from "dayjs";
 import { obtenerJefesNave } from "../src/services/ObtenerJefesNave";
+import { avisarSinInternet, hayInternet } from "../src/utils/conexion";
 type ListaOpciones = {
   key: number;
   label: string;
@@ -146,7 +147,20 @@ export default function TransferirScreen({ navigation }: Props) {
     }
   }, [wDatosAsentar]);
 
+  // Quita el indicador de carga de un boton cuando su sincronizacion se corta.
+  const detenerIndicador = (index: number) =>
+    setBotones((prev) =>
+      prev.map((b) => (b.index === index ? { ...b, sincro: false } : b))
+    );
+
   const handleActualizar = async () => {
+    // Todas las opciones llaman a la API: sin internet se avisa una vez y no
+    // se intenta ninguna.
+    if (!(await hayInternet())) {
+      avisarSinInternet();
+      return;
+    }
+
     for (const botonSele of botones) {
       console.log("rrr");
       if (botonSele.selec === 1) {
@@ -204,7 +218,10 @@ export default function TransferirScreen({ navigation }: Props) {
                 "",
                 "No se ha encontrado ninguna nave para este usuario"
               );
-              return;
+              // continue y no return: las demas opciones seleccionadas
+              // (p. ej. Avances) se siguen sincronizando.
+              detenerIndicador(botonSele.index);
+              continue;
             }
 
             const ValidaGuardadoNaves = await guardarListaNave(ListaNaves);
@@ -236,11 +253,16 @@ export default function TransferirScreen({ navigation }: Props) {
               idu_usuario: datosUser[0].idu_usuario
             });
             console.log("📌 listaEmpleados:", listaEmpleados);
-            if (listaEmpleados?.length === 0)
+            if (!listaEmpleados || listaEmpleados.length === 0) {
               Alert.alert(
                 "",
                 "No se ha encontrado ningun empleado para este usuario"
               );
+              // No se borra la lista local si no llego una nueva (p. ej. se
+              // perdio la señal durante la peticion).
+              detenerIndicador(botonSele.index);
+              continue;
+            }
 
             await eliminarDatos();
 
@@ -312,7 +334,8 @@ export default function TransferirScreen({ navigation }: Props) {
 
             if (listaAsentar.length === 0) {
               Alert.alert("Error", "No hay empleados con avances para asentar");
-              return;
+              detenerIndicador(botonSele.index);
+              continue;
             } else {
               //creamos un nuevo arreglo vacio de nombre lotesMap de tipo IEmpleadosParaAsentar
               const lotesMap = new Map<string, IEmpleadosParaAsentar>();
@@ -356,56 +379,54 @@ export default function TransferirScreen({ navigation }: Props) {
               const data = { lotes };
               console.log("asasasa", JSON.stringify(data, null, 2));
               //console.log(JSON.stringify(data.lotes, null, 2));
-              const res: any = await GuardarAvancesEnDb(data.lotes);
+              try {
+                const res: any = await GuardarAvancesEnDb(data.lotes);
 
-              if (res) {
-                const semana: any = await obtenerSemanaActivaSqLite();
+                // GuardarAvancesEnDb devuelve [] si no se pudo sincronizar
+                // (sin internet, sin respuesta o error del servidor) y ya
+                // mostro el aviso correspondiente.
+                if (Array.isArray(res) && res.length > 0) {
+                  for (const item of res) {
+                    const { cod_lote, cod_nave, wDatos } = item ?? {};
+                    if (!Array.isArray(wDatos)) continue;
 
-                for (const item of res) {
-                  const { cod_lote, cod_nave, wDatos } = item;
+                    for (const empleado of wDatos) {
+                      const { cod_act, cod_avn, cod_emp } = empleado;
 
-                  for (const empleado of wDatos) {
-                    const {
-                      cod_act,
-                      cod_avn,
-                      cod_emp,
-                      avances,
-                      bandera,
-                      avancesA,
-                      rendAplicado,
-                      estadoSincro,
-                      mensajeSincro
-                    } = empleado;
-
-                    const confirGuardado = await ActualizarAvancesSincro({
-                      estadoSincro: estadoSincro,
-                      MensajeSincro: mensajeSincro,
-                      cod_actividad: cod_act,
-                      cod_avance: cod_avn,
-                      cod_lote: cod_lote,
-                      cod_nave: cod_nave,
-                      cod_empleado: cod_emp,
-                      semanaActiva: semana[0].semanaActiva,
-                      fecha: fecha
-                    } as IAvanceEmpleado);
+                      // El servidor puede devolver el campo en camelCase o
+                      // PascalCase; nunca se manda undefined a SQLite.
+                      await ActualizarAvancesSincro({
+                        estadoSincro: empleado.estadoSincro ?? 0,
+                        MensajeSincro:
+                          empleado.mensajeSincro ?? empleado.MensajeSincro ?? "",
+                        cod_actividad: cod_act,
+                        cod_avance: cod_avn,
+                        cod_lote: cod_lote,
+                        cod_nave: cod_nave,
+                        cod_empleado: cod_emp,
+                        semanaActiva: semana[0].semanaActiva,
+                        fecha: fecha
+                      } as IAvanceEmpleado);
+                    }
                   }
+                  Alert.alert(
+                    "",
+                    "Se han sincronizado y guardado los datos en el dispositivo"
+                  );
+                } else {
+                  Alert.alert(
+                    "Error",
+                    "No se pudieron enviar los avances. Los registros siguen guardados en el dispositivo; intente de nuevo."
+                  );
                 }
-                Alert.alert(
-                  "",
-                  "Se han sincronizado y guardado los datos en el dispositivo"
-                );
-                setBotones((prev) =>
-                  prev.map((b) =>
-                    b.index === botonSele.index
-                      ? { ...b, sincro: b.sincro === true ? false : true }
-                      : b
-                  )
-                );
-              } else {
+              } catch (error: any) {
+                console.log("Error al sincronizar avances:", error?.message);
                 Alert.alert(
                   "Error",
-                  "No se pudieron enviar los datos par ala sincronizacion"
+                  "Ocurrió un problema al sincronizar los avances. Los registros siguen guardados en el dispositivo; intente de nuevo."
                 );
+              } finally {
+                detenerIndicador(botonSele.index);
               }
 
               

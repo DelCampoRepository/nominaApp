@@ -4,7 +4,7 @@ import { CustomTableRow } from "./CustomTableRow";
 import { useEffect, useState } from "react";
 import { IdatosActividadesNaves } from "../../../src/interfaces/local/IdatosActNave";
 import { SeleccionarActEnNaves } from "../../../src/services/sqlite";
-import { fecha } from "../../../src/utils/GenerarFecha";
+import { obtenerFecha } from "../../../src/utils/GenerarFecha";
 import { ConsultarSemanaActiva } from "../../../src/utils/ObtenerSemanaActiva";
 import { actualizarActEnNave } from "../../../src/services/sqlite";
          
@@ -79,7 +79,7 @@ useEffect(() => {
       return SeleccionarActEnNaves(
         codLote,
         codNave,
-        fecha,
+        obtenerFecha(),
         semana
       );
 

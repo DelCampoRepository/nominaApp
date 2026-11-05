@@ -7,5 +7,6 @@ export interface  IdatosEmpleadoNoInternet{
     token: string;
     expiration: string;
     user: string;
+    contra: string;
 
 }

@@ -2,6 +2,7 @@ import api from "../api";
 import { IconsultaActividadesxLote } from "../interfaces/IconsultaActividadesxLote";
 import { IRespuestaActividadesxLote} from "../interfaces/IRespuestaActividadesxLote";
 import { Alert } from "react-native";
+import { esSinInternet } from "../utils/conexion";
 export async function  obtenerListaDeActividadesPorUsuario(data:IconsultaActividadesxLote): Promise<IRespuestaActividadesxLote[]> {
 
     try{
@@ -21,24 +22,14 @@ export async function  obtenerListaDeActividadesPorUsuario(data:IconsultaActivid
                  
             }
     catch (error: any){
-        if (error.response) {
-             // El backend respondió con error (401, 400, 500, etc.)
-            
-             console.error("❌ Error en login:", error.response.data);
-             throw new Error(
-               error.response.data.message || "Credenciales incorrectas"
-             );
-           } else if (error.request) {
-             // No hubo respuesta del servidor
-             Alert.alert('',error);
-             console.error("❌ Sin respuesta del servidor:", error.request);
-             throw new Error("No se pudo conectar con el servidor");
-           } else {
-             // Error inesperado en la configuración o en Axios
-             Alert.alert('',error);
-             console.error("❌ Error inesperado:", error.message);
-             throw new Error("Error inesperado en login");
-           }
+        // Sin internet o sin respuesta del servidor: el interceptor de api ya
+        // aviso. Se devuelve [] en lugar de lanzar porque LoadingScreen y
+        // TrasferirScreen no atrapan errores de este servicio.
+        if (!esSinInternet(error) && error?.response) {
+             Alert.alert('Error', String(error?.message || 'Error al obtener la lista de actividades'));
+        }
+        console.log("Error en obtenerListaDeActividadesPorUsuario:", error?.message);
+        return [];
     }
     
 }

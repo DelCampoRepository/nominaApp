@@ -3,7 +3,7 @@ import { View,StyleSheet, FlatList, Text, Touchable, TouchableOpacity, Alert } f
 import { RenderRow } from "./RenderRow"
 import { useState } from "react";
 import { actualizar, GuardarActEnNaves, obtenerSemanaActivaSqLite } from "../../../src/services/sqlite";
-import { fecha } from "../../../src/utils/GenerarFecha";
+import { obtenerFecha } from "../../../src/utils/GenerarFecha";
 import { ConsultarSemanaActiva } from "../../../src/utils/ObtenerSemanaActiva";
 type props={
     data : ISecundaryActividades[];
@@ -52,7 +52,7 @@ export const CustomTable =({data,codLote}:props) => {
 async function handleGuardar() {
      await actualizar(codLote, listaSeleccion);    
     const semana = await ConsultarSemanaActiva();
-    await GuardarActEnNaves(codLote,fecha,semana);
+    await GuardarActEnNaves(codLote,obtenerFecha(),semana);
         if (true) Alert.alert("", `Se guardaron los cambios para el lote ${codLote}`);
     
 };

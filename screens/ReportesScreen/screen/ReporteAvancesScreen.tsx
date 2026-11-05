@@ -12,7 +12,7 @@ import ModalLotes from "../components/ModalLotes";
 import ModalNaves from "../components/ModalNaves";
 
 import { ConsultarSemanaActiva } from "../../../src/utils/ObtenerSemanaActiva";
-import { fecha } from "../../../src/utils/GenerarFecha";
+import { obtenerFecha } from "../../../src/utils/GenerarFecha";
 import { IdatosActividadesNaves } from "../../../src/interfaces/local/IdatosActNave";
 import { SeleccionarActEnNaves } from "../../../src/services/sqlite";
 import { CustomTable } from "../components/CustomTable";
@@ -86,7 +86,7 @@ useEffect(() => {
       const seleccion = await SeleccionarActEnNaves(
         datosLote.codLote,
         datosNave.codNave,
-        fecha,
+        obtenerFecha(),
         await ConsultarSemanaActiva()
       );
 

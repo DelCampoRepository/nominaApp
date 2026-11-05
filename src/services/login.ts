@@ -1,8 +1,9 @@
-import api from "../api"
+import { authApi } from "../api"
 import { IUsuario } from "../interfaces/IUsuario";
 import { ILoginResponse } from "../interfaces/ILoginResponse";
 import * as Crypto from 'expo-crypto';
 import { Alert } from "react-native";
+import { esSinInternet } from "../utils/conexion";
 
 // creamos la funcion login  que recibira un objeto de tipo Isuario con los datos name y pass para mandar la peticion 
 //y recibir una respuesa del tipo ILoginResponse que adendro obtendremos el token, le damos como parametro el enpoint a cosultar y 
@@ -15,8 +16,8 @@ try{
         nomCorto: data.nomCorto,
         contra:  hashedPassword
      }
-        
-      const resp = await api.post<ILoginResponse>('/Empleado/ValidaUsuario',usuarioHash); 
+        console.log('hasshas', usuarioHash)
+      const resp = await authApi.post<ILoginResponse>('/Empleado/ValidaUsuario',usuarioHash);
     
       if (resp.status === 200) {
       
@@ -30,24 +31,16 @@ try{
 
 }catch (error: any) {
    console.log(error)
-  if (error.response) {
-      // El backend respondió con error (401, 400, 500, etc.)
-      Alert.alert('no autorizado',error);
-      console.error(" Error en login:", error.response.data);
-      throw new Error(
-        error.response.data.message || "Credenciales incorrectas"
-      );
-    } else if (error.request) {
-      // No hubo respuesta del servidor
-      Alert.alert('',error);
-      console.error(" Sin respuesta del servidor:", error.request);
-      throw new Error("No se pudo conectar con el servidor");
-    } else {
-      // Error inesperado en la configuración o en Axios
-      Alert.alert('',error);
-      console.error(" Error inesperado:", error.message);
-      throw new Error("Error inesperado en login");
-    }
+  // Sin internet o sin respuesta del servidor: el interceptor de authApi ya
+  // aviso al usuario. Nunca pasar un objeto como mensaje a Alert.alert: en
+  // Android eso lanza un error nativo y cierra la app.
+  if (esSinInternet(error)) throw error;
+  if (!error?.response && error?.request) {
+    throw new Error("No se pudo conectar con el servidor");
+  }
+  const mensaje = String(error?.message || "Error inesperado en login");
+  Alert.alert('Error en login', mensaje);
+  throw new Error(mensaje);
   }
 }
 

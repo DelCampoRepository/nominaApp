@@ -86,9 +86,21 @@ const botones: Boton[] = [
     label2: "jefe de nave",
     screen: "Pagos"
   }
-  
+
 ];
 
+/**
+ * 
+ * 
+ * ,{
+    index: "9",
+    icon: require("../../../assets/view-list.png"),
+    label: "Empleados",
+    label2: "seleccionados",
+    screen: "EmpleadosSeleccionados"
+  }
+ * 
+ */
 export default function HomeScreen({ navigation }: Props) {
 
  //const { width, height } = useWindowDimensions();
@@ -101,7 +113,7 @@ export default function HomeScreen({ navigation }: Props) {
     switch (screen) {
       case "Login":
         await HandleSalir();
-        navigation.navigate(screen);
+        navigation.navigate(screen );
         break;
       default:
         navigation.navigate(screen);
