@@ -328,15 +328,16 @@ export async function guardarListajefesNave(
 export async function insertarAvanceSQLite  (
   avances: IAvanceUI[],
   semanaActiva: string
-)  {
+): Promise<boolean> {
 
-  console.log('para guardar',avances,semanaActiva)
-  try{ 
+  try{
     const database = await getDB();
-  
+
+  // En una transacción: o se guardan todos o ninguno.
+  await database.withTransactionAsync(async () => {
   for (let avance of avances) {
-    
-    const res =  await database.runAsync(
+
+    await database.runAsync(
      `
      INSERT OR IGNORE INTO tablaAvances (
        cod_lote,
@@ -379,14 +380,13 @@ export async function insertarAvanceSQLite  (
       ]
     
     );
-
-    console.log(res.changes)
   }
-    
-    
+  });
+  return true;
   }catch(error : any)
   {
-    Alert.alert('', error.message)
+    console.log(error.message)
+    return false;
   }
 };
 
