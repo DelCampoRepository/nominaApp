@@ -6,6 +6,7 @@ type Props = {
   avance: ISecundaryActividades;
   seleccionado: boolean;
   modificado: boolean;
+  deshabilitado?: boolean;
   onPress: () => void;
 };
 
@@ -26,13 +27,15 @@ const capitalizar = (texto: string) => {
   return t.charAt(0).toUpperCase() + t.slice(1);
 };
 
-export default function FilaAvance({ avance, seleccionado, modificado, onPress }: Props) {
+export default function FilaAvance({ avance, seleccionado, modificado, deshabilitado, onPress }: Props) {
   return (
     <Pressable
       onPress={onPress}
+      disabled={deshabilitado}
       style={({ pressed }) => [
         styles.fila,
         seleccionado && styles.filaSeleccionada,
+        deshabilitado && { opacity: 0.6 },
         pressed && { opacity: 0.85 }
       ]}
     >

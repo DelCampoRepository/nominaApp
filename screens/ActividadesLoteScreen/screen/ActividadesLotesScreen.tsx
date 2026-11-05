@@ -185,7 +185,16 @@ export default function ActividadesLoteScreen({ navigation }: Props) {
       if (!(await GuardarActEnNaves(lote.codigo, obtenerFecha(), semana))) {
         throw new Error("No se pudieron asignar las actividades a las naves del lote.");
       }
-      setPendientes({});
+      // Solo se quitan los cambios que se guardaron (y que no se volvieron a
+      // modificar mientras tanto).
+      setPendientes((prev) => {
+        const siguiente = { ...prev };
+        for (const c of cambios) {
+          const clave = claveAvance(c);
+          if (siguiente[clave]?.selecionado === c.selecionado) delete siguiente[clave];
+        }
+        return siguiente;
+      });
       if (actividad) await cargarAvances(lote.codigo, actividad.codigo);
       setAviso({
         tipo: "ok",
@@ -204,11 +213,19 @@ export default function ActividadesLoteScreen({ navigation }: Props) {
     }
   };
 
-  const regresar = () => {
-    clearEmployeeCode();
-    clearNombre();
-    navigation.navigate("Inicio");
-  };
+  // popTo regresa a la Inicio existente (navigate abriría una nueva encima, sin
+  // quitar esta pantalla ni disparar la confirmación de cambios sin guardar).
+  const regresar = () => navigation.popTo("Inicio");
+
+  // Igual que el Header anterior: se limpia el empleado escaneado al salir,
+  // solo cuando la pantalla realmente se cierra.
+  useEffect(
+    () => () => {
+      clearEmployeeCode();
+      clearNombre();
+    },
+    []
+  );
 
   const opcionesLote: OpcionSelector[] = lotes.map((l) => ({ codigo: l.cod_lote, nombre: l.nom_lote }));
   const opcionesActividad: OpcionSelector[] = actividades.map((a) => ({
@@ -264,11 +281,14 @@ export default function ActividadesLoteScreen({ navigation }: Props) {
           </Text>
           <Pressable
             hitSlop={8}
+            disabled={guardando}
             onPress={() =>
               fijarSeleccion(avances.map((a) => ({ avance: a, valor: !todosSeleccionados })))
             }
           >
-            <Text style={styles.enlace}>{todosSeleccionados ? "Quitar todo" : "Seleccionar todo"}</Text>
+            <Text style={[styles.enlace, guardando && { opacity: 0.4 }]}>
+              {todosSeleccionados ? "Quitar todo" : "Seleccionar todo"}
+            </Text>
           </Pressable>
         </View>
         {avances.map((a) => (
@@ -277,6 +297,7 @@ export default function ActividadesLoteScreen({ navigation }: Props) {
             avance={a}
             seleccionado={valorActual(a)}
             modificado={!!pendientes[claveAvance(a)]}
+            deshabilitado={guardando}
             onPress={() => fijarSeleccion([{ avance: a, valor: !valorActual(a) }])}
           />
         ))}
@@ -316,6 +337,7 @@ export default function ActividadesLoteScreen({ navigation }: Props) {
           icono={ICONO_LOTE}
           valor={lote}
           placeholder="Seleccionar lote"
+          deshabilitado={guardando}
           onPress={() => setModal("lote")}
         />
         <Selector
@@ -324,7 +346,7 @@ export default function ActividadesLoteScreen({ navigation }: Props) {
           icono={ICONO_ACTIVIDAD}
           valor={actividad}
           placeholder={lote ? "Seleccionar actividad" : "Primero elige un lote"}
-          deshabilitado={!lote || actividades.length === 0}
+          deshabilitado={guardando || !lote || actividades.length === 0}
           onPress={() => setModal("actividad")}
         />
       </View>
