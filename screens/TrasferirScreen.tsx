@@ -1,623 +1,828 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useRef, useEffect } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  StyleSheet,
+  View,
+  Image,
+  ImageSourcePropType,
+  Pressable,
+  ScrollView,
+  Animated
+} from "react-native";
+import { Text, Button, ActivityIndicator } from "react-native-paper";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
+import dayjs from "dayjs";
+import "dayjs/locale/es";
 import { RootStackParamList } from "../types/types";
 import { obtenerListaLotesxUSuario } from "../src/services/ObtenerLotesxUsuario";
-import Header from "../src/components/Header";
 import { obtenerListaNavesxUsuario } from "../src/services/ObtenerNavesxUsuario";
 import { guardarListaNave } from "../src/services/local/guardarListaDeNavesEnDbLocal";
 import { useTransferenciaCat } from "../src/hooks/useTransferenciaCat";
 import { GuardarAvancesEnDb } from "../src/services/GuardarAvancesAAsenar";
-import {
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  View,
-  Animated,
-  ImageSourcePropType,
-  Alert
-} from "react-native";
-import {
-  Text,
-  TextInput,
-  IconButton,
-  Appbar,
-  DataTable,
-  Checkbox,
-  Avatar,
-  Button,
-  ActivityIndicator,
-  MD2Colors
-} from "react-native-paper";
-import React, { useState } from "react";
 import {
   guardarListaLotesXUsuarioSqLite,
   guardarListaActividadesxLote,
   SeleccionarAvancesEmpleadosASyncronizar,
   obtenerSemanaActivaSqLite,
   ActualizarAvancesSincro,
-  Seleccionarllenado,
   SeleccionarDatosUsuario,
   guardarListajefesNave
 } from "../src/services/sqlite";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { IRespuestaTransferenciaCat } from "../src/interfaces/IRespuestaTransferenciaCat1";
-import { IWDatos } from "../src/interfaces/IEmpleadosParaAsentar";
 import { IEmpleadosParaAsentar } from "../src/interfaces/IEmpleadosParaAsentar";
 import { IAvanceEmpleado } from "../src/interfaces/local/IAvanceEmpleado";
 import {
   InsertarEmpleadosASQLite,
   eliminarDatos
 } from "../src/services/local/guardarListaDeEmpleadosEnDbLocal";
-type Props = NativeStackScreenProps<RootStackParamList, "Transferir">;
 import { obtenerListaDeActividadesPorUsuario } from "../src/services/ObtenerActividadesxLote";
-import { useUser } from "../src/context/userContext";
-import dayjs from "dayjs";
 import { obtenerJefesNave } from "../src/services/ObtenerJefesNave";
+import { useUser } from "../src/context/userContext";
+import { useEmployee } from "../src/context/QrContext";
 import { avisarSinInternet, hayInternet } from "../src/utils/conexion";
-type ListaOpciones = {
-  key: number;
-  label: string;
-  estado: boolean;
+import { obtenerFecha } from "../src/utils/GenerarFecha";
+import {
+  ErrorPaso,
+  aErrorPaso,
+  errorListaVacia,
+  exigirInternet
+} from "../src/utils/sincronizacion";
+import ModalErrorSincronizacion from "../src/components/ModalErrorSincronizacion";
+
+type Props = NativeStackScreenProps<RootStackParamList, "Transferir">;
+
+const COLORES = {
+  fondo: "#e5e9f4",
+  tarjeta: "#ffffff",
+  verde: "#13c044",
+  verdeOscuro: "#008445",
+  verdeSuave: "#e3f6e9",
+  gris: "#c3c3c3",
+  grisSuave: "#eef0f5",
+  texto: "#1f2933",
+  textoSuave: "#6b7280",
+  error: "#d32f2f",
+  errorSuave: "#fdecea"
 };
 
-type boton = {
-  index: number;
-  nombre: string;
-  selec: number;
-  sincro: boolean;
+type ClaveOpcion = "avances" | "lotes" | "naves" | "empleados" | "actividades" | "jefes";
+type EstadoOpcion = "inactivo" | "proceso" | "ok" | "sinDatos" | "error";
+
+type DefinicionOpcion = {
+  clave: ClaveOpcion;
+  titulo: string;
+  descripcion: string;
   icono: ImageSourcePropType;
 };
+
+type InfoOpcion = {
+  seleccionada: boolean;
+  estado: EstadoOpcion;
+  mensaje?: string;
+  error?: { mensaje: string; detalle?: string };
+};
+
+// Resultado de una opción que terminó bien. `sinDatos`: no había nada que
+// enviar (no es un error).
+type Resultado = { mensaje: string; sinDatos?: boolean };
+
+const ENVIAR: DefinicionOpcion[] = [
+  {
+    clave: "avances",
+    titulo: "Avances",
+    descripcion: "Envía al servidor los avances capturados hoy",
+    icono: require("../assets/chart-line-variant.png")
+  }
+];
+
+const DESCARGAR: DefinicionOpcion[] = [
+  { clave: "lotes", titulo: "Lotes", descripcion: "Lotes asignados al usuario", icono: require("../assets/land-fields.png") },
+  { clave: "naves", titulo: "Naves", descripcion: "Naves de cada lote", icono: require("../assets/hoop-house.png") },
+  { clave: "empleados", titulo: "Empleados", descripcion: "Catálogo de empleados", icono: require("../assets/account.png") },
+  { clave: "actividades", titulo: "Actividades", descripcion: "Actividades y rendimientos por lote", icono: require("../assets/sprout.png") },
+  { clave: "jefes", titulo: "Jefes de nave", descripcion: "Jefes de nave del apuntador", icono: require("../assets/account-cowboy-hat.png") }
+];
+
+// Orden de ejecución: primero se envían los avances (lo que se debe mandar
+// todos los días) y después se descargan los catálogos.
+const OPCIONES = [...ENVIAR, ...DESCARGAR];
+
+const estadoInicial = (): Record<ClaveOpcion, InfoOpcion> =>
+  OPCIONES.reduce(
+    (acc, o) => ({
+      ...acc,
+      [o.clave]: { seleccionada: o.clave === "avances", estado: "inactivo" }
+    }),
+    {} as Record<ClaveOpcion, InfoOpcion>
+  );
+
+async function semanaActivaLocal(): Promise<string> {
+  const semana: any[] = await obtenerSemanaActivaSqLite();
+  if (!semana?.length) {
+    throw new ErrorPaso(
+      "No hay semana activa en el dispositivo.",
+      "Cierre sesión y vuelva a entrar con internet para descargarla."
+    );
+  }
+  return semana[0].semanaActiva;
+}
+
 export default function TransferirScreen({ navigation }: Props) {
-  const fadeAnimInputs = useRef(new Animated.Value(0)).current;
-  const translateYInputs = useRef(new Animated.Value(200)).current;
   const { iduUsuario } = useUser();
-  const [AvancesEmpleado, setAvancesEmpleado] = useState<IAvanceEmpleado[]>([]);
-  const [listaParaAsentar, setListaParaAsentar] =
-    useState<IEmpleadosParaAsentar>();
-  const [wDatosAsentar, setWdatosAsentar] = useState<IWDatos[]>([]);
-  const { loading, error, handleTransferenciaCat } = useTransferenciaCat();
-  const [botones, setBotones] = useState([
-    {
-      index: 1,
-      nombre: "Lotes",
-      selec: 0,
-      sincro: false,
-      icono: require("../assets/land-fields.png")
-    },
-    {
-      nombre: "Naves",
-      index: 2,
-      selec: 0,
-      sincro: false,
-      icono: require("../assets/hoop-house.png")
-    },
-    {
-      nombre: "Empleados",
-      index: 3,
-      selec: 0,
-      sincro: false,
-      icono: require("../assets/account.png")
-    },
-    {
-      nombre: "Actividades",
-      index: 4,
-      selec: 0,
-      sincro: false,
-      icono: require("../assets/sprout.png")
-    },
-    {
-      nombre: "Jefes de naves",
-      index: 6,
-      selec: 0,
-      sincro: false,
-      icono: require("../assets/account-cowboy-hat.png")
-    },
-    {
-      nombre: "Avances",
-      index: 5,
-      selec: 1,
-      sincro: false,
-      icono: require("../assets/chart-line-variant.png")
+  const { clearEmployeeCode, clearNombre } = useEmployee();
+  const { handleTransferenciaCat } = useTransferenciaCat();
+
+  const [opciones, setOpciones] = useState<Record<ClaveOpcion, InfoOpcion>>(estadoInicial);
+  const opcionesRef = useRef(opciones);
+  const [sincronizando, setSincronizando] = useState(false);
+  const [mostrarResumen, setMostrarResumen] = useState(false);
+  const [detalle, setDetalle] = useState<ClaveOpcion | null>(null);
+  const [semana, setSemana] = useState("");
+  const [avancesHoy, setAvancesHoy] = useState<number | null>(null);
+  const ejecutando = useRef(false);
+
+  const opacidad = useRef(new Animated.Value(0)).current;
+  const desplazamiento = useRef(new Animated.Value(40)).current;
+
+  const fecha = dayjs().locale("es").format("dddd D [de] MMMM");
+  const fechaHoy = fecha.charAt(0).toUpperCase() + fecha.slice(1);
+
+  const actualizarOpcion = (clave: ClaveOpcion, cambios: Partial<InfoOpcion>) => {
+    opcionesRef.current = {
+      ...opcionesRef.current,
+      [clave]: { ...opcionesRef.current[clave], ...cambios }
+    };
+    setOpciones(opcionesRef.current);
+  };
+
+  // Avances registrados hoy: misma consulta que se usa al enviarlos.
+  const cargarResumen = useCallback(async () => {
+    try {
+      const semanaActiva = await semanaActivaLocal();
+      const avances = await SeleccionarAvancesEmpleadosASyncronizar(semanaActiva, obtenerFecha());
+      setSemana(String(semanaActiva));
+      setAvancesHoy(avances.filter((a) => Number(a.avance) !== 0).length);
+    } catch {
+      setAvancesHoy(null);
     }
-  ]);
-  const fecha = dayjs().format("YYYY-MM-DD");
+  }, []);
+
   useEffect(() => {
+    cargarResumen();
     Animated.parallel([
-      Animated.timing(fadeAnimInputs, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true
-      }),
-      Animated.timing(translateYInputs, {
-        toValue: 0,
-        duration: 1000,
-        useNativeDriver: true
-      })
+      Animated.timing(opacidad, { toValue: 1, duration: 500, useNativeDriver: true }),
+      Animated.timing(desplazamiento, { toValue: 0, duration: 400, useNativeDriver: true })
     ]).start();
   }, []);
 
-  useEffect(() => {}, [botones]);
-  useEffect(() => {
-    if (wDatosAsentar.length !== 0) {
-      setListaParaAsentar({
-        cod_lote: "",
-        cod_nave: "",
-        wDatos: wDatosAsentar
+  // Cada acción devuelve el resumen que se muestra al terminar bien, o lanza
+  // ErrorPaso con el motivo.
+  const acciones: Record<ClaveOpcion, () => Promise<Resultado>> = {
+    avances: async () => {
+      await exigirInternet();
+      const semanaActiva = await semanaActivaLocal();
+      const fechaHoy = obtenerFecha();
+      const lista = await SeleccionarAvancesEmpleadosASyncronizar(semanaActiva, fechaHoy);
+      if (lista.length === 0) {
+        return { mensaje: "No hay avances registrados hoy", sinDatos: true };
+      }
+
+      // Se agrupan los avances por lote y nave, como los espera el servidor.
+      const lotesMap = new Map<string, IEmpleadosParaAsentar>();
+      for (const empleado of lista) {
+        const { cod_lote, cod_nave } = empleado;
+        const key = `${cod_lote}_${cod_nave}`;
+        if (!lotesMap.has(key)) lotesMap.set(key, { cod_lote, cod_nave, wDatos: [] });
+        lotesMap.get(key)!.wDatos.push({
+          cod_act: empleado.cod_actividad,
+          cod_avn: empleado.cod_avance,
+          cod_emp: empleado.cod_empleado,
+          avances: empleado.avance,
+          avancesA: empleado.avanceA,
+          bandera: "",
+          rendAplicado: empleado.Rendimiento_Aplic,
+          estadoSincro: empleado.estadoSincro,
+          MensajeSincro: empleado.MensajeSincro
+        });
+      }
+
+      // GuardarAvancesEnDb devuelve [] si no se pudo sincronizar.
+      const res: any = await GuardarAvancesEnDb(Array.from(lotesMap.values()));
+      if (!Array.isArray(res) || res.length === 0) {
+        throw (await hayInternet())
+          ? new ErrorPaso(
+              "El servidor no confirmó la recepción de los avances.",
+              "Los registros siguen guardados en el dispositivo. Intente de nuevo; si el problema continúa, avise a sistemas."
+            )
+          : new ErrorPaso(
+              "Se perdió la conexión al enviar los avances.",
+              "Los registros siguen guardados en el dispositivo. Verifique su señal y presione Reintentar."
+            );
+      }
+
+      for (const item of res) {
+        const { cod_lote, cod_nave, wDatos } = item ?? {};
+        if (!Array.isArray(wDatos)) continue;
+        for (const empleado of wDatos) {
+          // El servidor puede devolver el campo en camelCase o PascalCase;
+          // nunca se manda undefined a SQLite.
+          await ActualizarAvancesSincro({
+            estadoSincro: empleado.estadoSincro ?? 0,
+            MensajeSincro: empleado.mensajeSincro ?? empleado.MensajeSincro ?? "",
+            cod_actividad: empleado.cod_act,
+            cod_avance: empleado.cod_avn,
+            cod_lote,
+            cod_nave,
+            cod_empleado: empleado.cod_emp,
+            semanaActiva,
+            fecha: fechaHoy
+          } as IAvanceEmpleado);
+        }
+      }
+      return {
+        mensaje: `${lista.length} ${lista.length === 1 ? "registro enviado" : "registros enviados"}`
+      };
+    },
+
+    lotes: async () => {
+      await exigirInternet();
+      const lotes = await obtenerListaLotesxUSuario({ idu_usuario: Number(iduUsuario) });
+      if (lotes.length === 0) throw await errorListaVacia("lotes");
+      if (!(await guardarListaLotesXUsuarioSqLite(lotes))) {
+        throw new ErrorPaso("No se pudieron guardar los lotes en el dispositivo.");
+      }
+      return { mensaje: `${lotes.length} lotes actualizados` };
+    },
+
+    naves: async () => {
+      await exigirInternet();
+      const naves = await obtenerListaNavesxUsuario({ idu_usuario: Number(iduUsuario) });
+      if (naves.length === 0) throw await errorListaVacia("naves");
+      if (!(await guardarListaNave(naves))) {
+        throw new ErrorPaso("No se pudieron guardar las naves en el dispositivo.");
+      }
+      return { mensaje: `${naves.length} naves actualizadas` };
+    },
+
+    empleados: async () => {
+      await exigirInternet();
+      const datosUser = await SeleccionarDatosUsuario();
+      const idu = datosUser[0]?.idu_usuario ?? iduUsuario;
+      const empleados = await handleTransferenciaCat({ wtipo: "1", idu_usuario: idu });
+      if (!empleados || empleados.length === 0) throw await errorListaVacia("empleados");
+
+      // Solo se reemplaza la lista local cuando llegó una nueva.
+      await eliminarDatos();
+      if (!(await InsertarEmpleadosASQLite(empleados as IRespuestaTransferenciaCat[]))) {
+        throw new ErrorPaso("No se pudieron guardar los empleados en el dispositivo.");
+      }
+      return { mensaje: `${empleados.length} empleados actualizados` };
+    },
+
+    actividades: async () => {
+      await exigirInternet();
+      const actividades = await obtenerListaDeActividadesPorUsuario({
+        idu_usuario: Number(iduUsuario)
       });
+      if (actividades.length === 0) throw await errorListaVacia("actividades");
+      if (!(await guardarListaActividadesxLote(actividades))) {
+        throw new ErrorPaso("No se pudieron guardar las actividades en el dispositivo.");
+      }
+      return { mensaje: `${actividades.length} actividades actualizadas` };
+    },
+
+    jefes: async () => {
+      await exigirInternet();
+      const respuesta = await obtenerJefesNave({ idu_usuario: String(iduUsuario) });
+      const jefes = respuesta?.jefesDeNave ?? [];
+      if (jefes.length === 0) throw await errorListaVacia("jefes de nave");
+      if (!(await guardarListajefesNave(jefes))) {
+        throw new ErrorPaso("No se pudieron guardar los jefes de nave en el dispositivo.");
+      }
+      return { mensaje: `${jefes.length} jefes de nave actualizados` };
     }
-  }, [wDatosAsentar]);
+  };
 
-  // Quita el indicador de carga de un boton cuando su sincronizacion se corta.
-  const detenerIndicador = (index: number) =>
-    setBotones((prev) =>
-      prev.map((b) => (b.index === index ? { ...b, sincro: false } : b))
-    );
+  // Ejecuta en orden las opciones seleccionadas. `soloClave` repite una sola
+  // (botón Reintentar del modal de error).
+  async function sincronizar(soloClave?: ClaveOpcion) {
+    if (ejecutando.current) return;
+    // Se bloquea antes del primer await para que un doble toque no inicie dos
+    // sincronizaciones.
+    ejecutando.current = true;
 
-  const handleActualizar = async () => {
     // Todas las opciones llaman a la API: sin internet se avisa una vez y no
     // se intenta ninguna.
     if (!(await hayInternet())) {
       avisarSinInternet();
+      ejecutando.current = false;
       return;
     }
 
-    for (const botonSele of botones) {
-      console.log("rrr");
-      if (botonSele.selec === 1) {
-        setBotones((prev) =>
-          prev.map((b) =>
-            b.index === botonSele.index
-              ? { ...b, sincro: b.sincro === false ? true : false }
-              : b
-          )
-        );
+    const aEjecutar = OPCIONES.filter((o) =>
+      soloClave ? o.clave === soloClave : opcionesRef.current[o.clave].seleccionada
+    );
+    if (aEjecutar.length === 0) {
+      ejecutando.current = false;
+      return;
+    }
 
-        switch (botonSele.index) {
-          case 1:
-            const lista = await obtenerListaLotesxUSuario({
-              idu_usuario: Number(iduUsuario)
-            });
+    setSincronizando(true);
+    setMostrarResumen(false);
+    // Una sincronización completa limpia el resultado de todas las opciones;
+    // un reintento solo el de la opción que se repite.
+    (soloClave ? aEjecutar : OPCIONES).forEach((o) =>
+      actualizarOpcion(o.clave, { estado: "inactivo", mensaje: undefined, error: undefined })
+    );
 
-            if (lista.length == 0)
-              Alert.alert(
-                "",
-                "No se ha encontrado ninguna tabla para este usuario"
-              );
-
-            const ValidaGuardadoLotes = await guardarListaLotesXUsuarioSqLite(
-              lista
-            );
-            if (ValidaGuardadoLotes) {
-              Alert.alert("", "Lotes sincronizados");
-              setBotones((prev) =>
-                prev.map((b) =>
-                  b.index === botonSele.index
-                    ? { ...b, sincro: b.sincro === true ? false : true }
-                    : b
-                )
-              );
-            } else {
-              Alert.alert("Error", "No se pudo actualizar lista de lotes");
-              setBotones((prev) =>
-                prev.map((b) =>
-                  b.index === botonSele.index
-                    ? { ...b, selec: b.selec === 1 ? 0 : 1 }
-                    : b
-                )
-              );
-            }
-
-            break;
-          case 2:
-            const ListaNaves = await obtenerListaNavesxUsuario({
-              idu_usuario: Number(iduUsuario)
-            });
-
-            if (ListaNaves.length === 0) {
-              Alert.alert(
-                "",
-                "No se ha encontrado ninguna nave para este usuario"
-              );
-              // continue y no return: las demas opciones seleccionadas
-              // (p. ej. Avances) se siguen sincronizando.
-              detenerIndicador(botonSele.index);
-              continue;
-            }
-
-            const ValidaGuardadoNaves = await guardarListaNave(ListaNaves);
-            if (ValidaGuardadoNaves) {
-              Alert.alert("", "Naves sincronizadas");
-              setBotones((prev) =>
-                prev.map((b) =>
-                  b.index === botonSele.index
-                    ? { ...b, sincro: b.sincro === true ? false : true }
-                    : b
-                )
-              );
-            } else {
-              Alert.alert("Error", "No se pudo actualizar lista de lotes");
-              setBotones((prev) =>
-                prev.map((b) =>
-                  b.index === botonSele.index
-                    ? { ...b, selec: b.selec === 1 ? 0 : 1 }
-                    : b
-                )
-              );
-            }
-
-            break;
-          case 3:
-            const datosUser = await SeleccionarDatosUsuario();
-            const listaEmpleados = await handleTransferenciaCat({
-              wtipo: "1",
-              idu_usuario: datosUser[0].idu_usuario
-            });
-            console.log("📌 listaEmpleados:", listaEmpleados);
-            if (!listaEmpleados || listaEmpleados.length === 0) {
-              Alert.alert(
-                "",
-                "No se ha encontrado ningun empleado para este usuario"
-              );
-              // No se borra la lista local si no llego una nueva (p. ej. se
-              // perdio la señal durante la peticion).
-              detenerIndicador(botonSele.index);
-              continue;
-            }
-
-            await eliminarDatos();
-
-            const ValidaGuardadoEmpleados = await InsertarEmpleadosASQLite(
-              listaEmpleados as IRespuestaTransferenciaCat[]
-            );
-            if (ValidaGuardadoEmpleados) {
-              Alert.alert("", "Empleados sincronizados");
-              setBotones((prev) =>
-                prev.map((b) =>
-                  b.index === botonSele.index
-                    ? { ...b, sincro: b.sincro === true ? false : true }
-                    : b
-                )
-              );
-            } else {
-              Alert.alert("Error", "No se pudo actualizar lista de empleados");
-              setBotones((prev) =>
-                prev.map((b) =>
-                  b.index === botonSele.index
-                    ? { ...b, selec: b.selec === 1 ? 0 : 1 }
-                    : b
-                )
-              );
-            }
-
-            break;
-          case 4:
-            const respuesta = await obtenerListaDeActividadesPorUsuario({
-              idu_usuario: Number(iduUsuario)
-            });
-            if (respuesta.length === 0) {
-            }
-
-            const validaGuardaActividades = await guardarListaActividadesxLote(
-              respuesta
-            );
-            if (validaGuardaActividades) {
-              Alert.alert("", "Actividades sincronizadas");
-
-              setBotones((prev) =>
-                prev.map((b) =>
-                  b.index === botonSele.index
-                    ? { ...b, sincro: b.sincro === true ? false : true }
-                    : b
-                )
-              );
-            } else {
-              Alert.alert(
-                "Error",
-                "No se pudo actualizar lista de actividades"
-              );
-              setBotones((prev) =>
-                prev.map((b) =>
-                  b.index === botonSele.index
-                    ? { ...b, selec: b.selec === 1 ? 0 : 1 }
-                    : b
-                )
-              );
-            }
-            break;
-          case 5:
-            const semana: any = await obtenerSemanaActivaSqLite();
-            // console.log("semana", semana[0].semanaActiva);
-            const listaAsentar = await SeleccionarAvancesEmpleadosASyncronizar(
-              semana[0].semanaActiva,
-              fecha
-            );
-
-            if (listaAsentar.length === 0) {
-              Alert.alert("Error", "No hay empleados con avances para asentar");
-              detenerIndicador(botonSele.index);
-              continue;
-            } else {
-              //creamos un nuevo arreglo vacio de nombre lotesMap de tipo IEmpleadosParaAsentar
-              const lotesMap = new Map<string, IEmpleadosParaAsentar>();
-
-              //por cada empleado en la lista
-              for (const empleado of listaAsentar) {
-                //tomamos el lote y nave de ese  empleado
-                const { cod_lote, cod_nave } = empleado;
-
-                const key = `${cod_lote}_${cod_nave}`;
-                //si el lote del empleado interado  no existe dentro de lotesMap
-                if (!lotesMap.has(key)) {
-                  lotesMap.set(key, {
-                    cod_lote,
-                    cod_nave,
-                    wDatos: []
-                  });
-                }
-
-                // console.log(JSON.stringify(lotesMap, null, 2));
-
-                const lote = lotesMap.get(key)!;
-
-                lote.wDatos.push({
-                  cod_act: empleado.cod_actividad,
-                  cod_avn: empleado.cod_avance,
-                  cod_emp: empleado.cod_empleado,
-                  avances: empleado.avance,
-                  avancesA: empleado.avanceA,
-                  bandera: "",
-                  rendAplicado: empleado.Rendimiento_Aplic,
-                  estadoSincro: empleado.estadoSincro,
-                  MensajeSincro: empleado.MensajeSincro
-                });
-              }
-
-              const lotes: IEmpleadosParaAsentar[] = Array.from(
-                lotesMap.values()
-              );
-
-              const data = { lotes };
-              console.log("asasasa", JSON.stringify(data, null, 2));
-              //console.log(JSON.stringify(data.lotes, null, 2));
-              try {
-                const res: any = await GuardarAvancesEnDb(data.lotes);
-
-                // GuardarAvancesEnDb devuelve [] si no se pudo sincronizar
-                // (sin internet, sin respuesta o error del servidor) y ya
-                // mostro el aviso correspondiente.
-                if (Array.isArray(res) && res.length > 0) {
-                  for (const item of res) {
-                    const { cod_lote, cod_nave, wDatos } = item ?? {};
-                    if (!Array.isArray(wDatos)) continue;
-
-                    for (const empleado of wDatos) {
-                      const { cod_act, cod_avn, cod_emp } = empleado;
-
-                      // El servidor puede devolver el campo en camelCase o
-                      // PascalCase; nunca se manda undefined a SQLite.
-                      await ActualizarAvancesSincro({
-                        estadoSincro: empleado.estadoSincro ?? 0,
-                        MensajeSincro:
-                          empleado.mensajeSincro ?? empleado.MensajeSincro ?? "",
-                        cod_actividad: cod_act,
-                        cod_avance: cod_avn,
-                        cod_lote: cod_lote,
-                        cod_nave: cod_nave,
-                        cod_empleado: cod_emp,
-                        semanaActiva: semana[0].semanaActiva,
-                        fecha: fecha
-                      } as IAvanceEmpleado);
-                    }
-                  }
-                  Alert.alert(
-                    "",
-                    "Se han sincronizado y guardado los datos en el dispositivo"
-                  );
-                } else {
-                  Alert.alert(
-                    "Error",
-                    "No se pudieron enviar los avances. Los registros siguen guardados en el dispositivo; intente de nuevo."
-                  );
-                }
-              } catch (error: any) {
-                console.log("Error al sincronizar avances:", error?.message);
-                Alert.alert(
-                  "Error",
-                  "Ocurrió un problema al sincronizar los avances. Los registros siguen guardados en el dispositivo; intente de nuevo."
-                );
-              } finally {
-                detenerIndicador(botonSele.index);
-              }
-
-              
-            }
-            break;
-        
-                 case 6:
-            const jefes = await obtenerJefesNave({
-              idu_usuario: String(iduUsuario)
-            });
-
-            if (jefes.jefesDeNave.length === 0) {
-              Alert.alert("Error", "No hay jefes de nave para este usuario");
-            }
-            const ValidarGuardardoJefesNave = await guardarListajefesNave(
-              jefes.jefesDeNave
-            );
-            if (ValidarGuardardoJefesNave) {
-              Alert.alert("", "Jefes sincronizados");
-              setBotones((prev) =>
-                prev.map((b) =>
-                  b.index === botonSele.index
-                    ? { ...b, sincro: b.sincro === true ? false : true }
-                    : b
-                )
-              );
-            } else {
-              Alert.alert("Error", "No se pudo actualizar lista de lotes");
-              setBotones((prev) =>
-                prev.map((b) =>
-                  b.index === botonSele.index
-                    ? { ...b, selec: b.selec === 1 ? 0 : 1 }
-                    : b
-                )
-              );
-            }
-
-            break;
-          
-          }
+    for (const opcion of aEjecutar) {
+      actualizarOpcion(opcion.clave, { estado: "proceso", mensaje: "Sincronizando…" });
+      try {
+        const resultado = await acciones[opcion.clave]();
+        actualizarOpcion(opcion.clave, {
+          estado: resultado.sinDatos ? "sinDatos" : "ok",
+          mensaje: resultado.mensaje
+        });
+      } catch (e: any) {
+        const error = aErrorPaso(e);
+        actualizarOpcion(opcion.clave, {
+          estado: "error",
+          mensaje: error.message,
+          error: { mensaje: error.message, detalle: error.detalle }
+        });
       }
     }
+
+    ejecutando.current = false;
+    setSincronizando(false);
+    setMostrarResumen(true);
+    cargarResumen();
+  }
+
+  const alternar = (clave: ClaveOpcion) => {
+    if (sincronizando) return;
+    actualizarOpcion(clave, { seleccionada: !opcionesRef.current[clave].seleccionada });
   };
 
-  
-  return (
-    <Animated.View style={[styles.AnimatedView, { opacity: fadeAnimInputs }]}>
-      <SafeAreaView>
-        <View style={styles.header}>
-          <Header titulo="SINCRONIZAR" pantalla="" />
-        </View>
-        <View style={styles.main}>
-          {botones.map((boton, index) => (
-            <TouchableOpacity
-              key={index}
-              onPress={() =>
-                setBotones((prev) =>
-                  prev.map((b) =>
-                    b.index === boton.index
-                      ? { ...b, selec: b.selec === 0 ? 1 : 0 }
-                      : b
-                  )
-                )
-              }
-              style={{
-                width: "90%",
-                height: 50,
-                backgroundColor: "white",
-                elevation: 10,
-                display: "flex",
-                justifyContent: "center",
-                marginVertical: 5,
-                flexDirection: "row",
-                borderRadius: 10
-              }}
-            >
-              <View
-                style={{
-                  width: "10%",
-                  height: "100%",
-                  display: "flex",
-                  justifyContent: "center"
-                }}
-              >
-                <Avatar.Icon
-                  color="#13c044"
-                  style={{ backgroundColor: "", paddingLeft: 0 }}
-                  size={40}
-                  icon={boton.icono}
-                />
-              </View>
-              <View
-                style={{
-                  width: "80%",
-                  height: "100%",
-                  display: "flex",
-                  justifyContent: "center",
-                  paddingLeft: 20
-                }}
-              >
-                <Text variant="bodyMedium">{boton.nombre}</Text>
-              </View>
-              <View
-                style={{
-                  width: "10%",
-                  height: "100%",
-                  display: "flex",
-                  justifyContent: "center"
-                }}
-              >
-                {boton.sincro ? (
-                  <ActivityIndicator
-                    animating={true}
-                    color={"#13c044"}
-                  />
-                ) : (
-                  <IconButton
-                    icon={
-                      boton.selec === 0
-                        ? ""
-                        : require("../assets/check-bold.png")
-                    }
-                    key={boton.index}
-                    iconColor="green"
-                    size={20}
-                    style={{
-                      width: 15,
-                      height: 15,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center"
-                    }}
-                  />
-                )}
-              </View>
-            </TouchableOpacity>
-          ))}
-        </View>
-        <View style={styles.footer}>
-          <View
-            style={{
-              width: "80%",
-              height: 40,
+  const todasDescargas = DESCARGAR.every((o) => opciones[o.clave].seleccionada);
+  const alternarDescargas = () => {
+    if (sincronizando) return;
+    DESCARGAR.forEach((o) => actualizarOpcion(o.clave, { seleccionada: !todasDescargas }));
+  };
 
-              display: "flex",
-              justifyContent: "center"
-            }}
-          >
-            <Button
-              icon=""
-              mode="contained"
-              onPress={handleActualizar}
-              style={{ backgroundColor: "#13c044" }}
+  const regresar = () => {
+    clearEmployeeCode();
+    clearNombre();
+    navigation.goBack();
+  };
+
+  const seleccionadas = OPCIONES.filter((o) => opciones[o.clave].seleccionada).length;
+
+  // El resumen se calcula del estado actual de cada tarjeta (no de la última
+  // ejecución), para que un reintento individual no oculte otros errores.
+  const estados = OPCIONES.map((o) => opciones[o.clave].estado);
+  const resumen = mostrarResumen
+    ? {
+        ok: estados.filter((e) => e === "ok" || e === "sinDatos").length,
+        error: estados.filter((e) => e === "error").length
+      }
+    : null;
+  const opcionDetalle = detalle ? OPCIONES.find((o) => o.clave === detalle) : undefined;
+  const infoDetalle = detalle ? opciones[detalle] : undefined;
+
+  const textoAvances =
+    avancesHoy === null
+      ? "No se pudo consultar los avances de hoy"
+      : avancesHoy === 0
+        ? "No hay avances registrados hoy"
+        : `${avancesHoy} ${avancesHoy === 1 ? "avance registrado" : "avances registrados"} hoy`;
+
+  const renderOpcion = (o: DefinicionOpcion) => (
+    <TarjetaOpcion
+      key={o.clave}
+      definicion={o}
+      info={opciones[o.clave]}
+      deshabilitada={sincronizando}
+      onPress={() => alternar(o.clave)}
+      onVerDetalle={() => setDetalle(o.clave)}
+    />
+  );
+
+  return (
+    <SafeAreaView style={styles.container} edges={["bottom", "left", "right"]}>
+      <LinearGradient
+        colors={[COLORES.verde, COLORES.verdeOscuro]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.encabezado}
+      >
+        <SafeAreaView edges={["top"]}>
+          <View style={styles.filaEncabezado}>
+            <Pressable
+              onPress={regresar}
+              hitSlop={8}
+              style={({ pressed }) => [styles.botonRegresar, pressed && { opacity: 0.7 }]}
             >
-              Actualizar
-            </Button>
+              <Image source={require("../assets/arrow-left.png")} style={styles.iconoRegresar} />
+            </Pressable>
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={styles.titulo}>Sincronizar</Text>
+              <Text style={styles.subtitulo} numberOfLines={1}>
+                {fechaHoy}
+                {semana ? ` · Semana ${semana}` : ""}
+              </Text>
+            </View>
           </View>
-        </View>
-      </SafeAreaView>
-    </Animated.View>
+        </SafeAreaView>
+      </LinearGradient>
+
+      <Animated.View style={{ flex: 1, opacity: opacidad, transform: [{ translateY: desplazamiento }] }}>
+        <ScrollView contentContainerStyle={styles.contenido} showsVerticalScrollIndicator={false}>
+          <View style={styles.tarjetaResumen}>
+            <View style={styles.circuloResumen}>
+              <Image source={require("../assets/chart-line-variant.png")} style={styles.iconoResumen} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.numeroResumen}>{avancesHoy ?? "–"}</Text>
+              <Text style={styles.textoResumen}>{textoAvances}</Text>
+            </View>
+          </View>
+
+          {resumen && (
+            <View
+              style={[
+                styles.aviso,
+                resumen.error > 0 ? styles.avisoError : styles.avisoOk
+              ]}
+            >
+              <Image
+                source={
+                  resumen.error > 0
+                    ? require("../assets/close.png")
+                    : require("../assets/check-bold.png")
+                }
+                style={[styles.iconoAviso, { tintColor: resumen.error > 0 ? COLORES.error : COLORES.verdeOscuro }]}
+              />
+              <Text style={[styles.textoAviso, { color: resumen.error > 0 ? COLORES.error : COLORES.verdeOscuro }]}>
+                {resumen.error > 0
+                  ? `${resumen.error} ${resumen.error === 1 ? "opción terminó" : "opciones terminaron"} con error${resumen.ok > 0 ? ` · ${resumen.ok} correctas` : ""}`
+                  : "Sincronización completada correctamente"}
+              </Text>
+            </View>
+          )}
+
+          <Text style={styles.tituloSeccion}>Enviar al servidor</Text>
+          {ENVIAR.map(renderOpcion)}
+
+          <View style={styles.filaSeccion}>
+            <Text style={[styles.tituloSeccion, { marginTop: 0, marginBottom: 0 }]}>
+              Descargar del servidor
+            </Text>
+            <Pressable onPress={alternarDescargas} disabled={sincronizando} hitSlop={8}>
+              <Text style={[styles.enlace, sincronizando && { opacity: 0.4 }]}>
+                {todasDescargas ? "Quitar todo" : "Seleccionar todo"}
+              </Text>
+            </Pressable>
+          </View>
+          {DESCARGAR.map(renderOpcion)}
+        </ScrollView>
+      </Animated.View>
+
+      <View style={styles.pie}>
+        <Button
+          mode="contained"
+          buttonColor={COLORES.verdeOscuro}
+          style={styles.botonPrincipal}
+          contentStyle={{ height: 50 }}
+          labelStyle={{ fontSize: 16, fontWeight: "700" }}
+          icon={sincronizando ? undefined : require("../assets/sync.png")}
+          loading={sincronizando}
+          disabled={sincronizando || seleccionadas === 0}
+          onPress={() => sincronizar()}
+        >
+          {sincronizando
+            ? "Sincronizando…"
+            : seleccionadas === 0
+              ? "Seleccione una opción"
+              : `Sincronizar (${seleccionadas})`}
+        </Button>
+      </View>
+
+      <ModalErrorSincronizacion
+        visible={!!infoDetalle?.error}
+        titulo={opcionDetalle?.titulo ?? ""}
+        mensaje={infoDetalle?.error?.mensaje}
+        detalle={infoDetalle?.error?.detalle}
+        onCerrar={() => setDetalle(null)}
+        onReintentar={() => {
+          const clave = detalle;
+          setDetalle(null);
+          if (clave) sincronizar(clave);
+        }}
+        reintentarDeshabilitado={sincronizando}
+      />
+    </SafeAreaView>
   );
 }
 
+type TarjetaOpcionProps = {
+  definicion: DefinicionOpcion;
+  info: InfoOpcion;
+  deshabilitada: boolean;
+  onPress: () => void;
+  onVerDetalle: () => void;
+};
+
+function TarjetaOpcion({ definicion, info, deshabilitada, onPress, onVerDetalle }: TarjetaOpcionProps) {
+  const { seleccionada, estado, mensaje } = info;
+  const colorMensaje =
+    estado === "error" ? COLORES.error : estado === "ok" ? COLORES.verdeOscuro : COLORES.textoSuave;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={deshabilitada}
+      style={({ pressed }) => [
+        styles.tarjeta,
+        seleccionada && styles.tarjetaSeleccionada,
+        estado === "error" && styles.tarjetaError,
+        pressed && { opacity: 0.85 }
+      ]}
+    >
+      <View style={[styles.circuloIcono, { backgroundColor: seleccionada ? COLORES.verdeSuave : COLORES.grisSuave }]}>
+        <Image
+          source={definicion.icono}
+          style={[styles.iconoOpcion, { tintColor: seleccionada ? COLORES.verdeOscuro : COLORES.textoSuave }]}
+        />
+      </View>
+
+      <View style={{ flex: 1 }}>
+        <Text style={styles.tituloOpcion}>{definicion.titulo}</Text>
+        <Text style={styles.descripcionOpcion} numberOfLines={2}>
+          {definicion.descripcion}
+        </Text>
+        {estado !== "inactivo" && !!mensaje && (
+          <View style={styles.filaEstado}>
+            {estado === "ok" && (
+              <Image source={require("../assets/check-bold.png")} style={[styles.iconoEstado, { tintColor: COLORES.verdeOscuro }]} />
+            )}
+            {estado === "error" && (
+              <Image source={require("../assets/close.png")} style={[styles.iconoEstado, { tintColor: COLORES.error }]} />
+            )}
+            <Text style={[styles.mensajeEstado, { color: colorMensaje }]} numberOfLines={2}>
+              {mensaje}
+            </Text>
+          </View>
+        )}
+        {estado === "error" && (
+          <Pressable onPress={onVerDetalle} hitSlop={8} style={{ alignSelf: "flex-start" }}>
+            <Text style={styles.verDetalle}>Ver detalle ›</Text>
+          </Pressable>
+        )}
+      </View>
+
+      <View style={styles.control}>
+        {estado === "proceso" ? (
+          <ActivityIndicator size={20} color={COLORES.verde} />
+        ) : (
+          <View style={[styles.casilla, seleccionada && styles.casillaMarcada]}>
+            {seleccionada && (
+              <Image source={require("../assets/check-bold.png")} style={styles.iconoCasilla} />
+            )}
+          </View>
+        )}
+      </View>
+    </Pressable>
+  );
+}
+
+const sombra = {
+  elevation: 2,
+  shadowColor: "#000",
+  shadowOpacity: 0.06,
+  shadowRadius: 8,
+  shadowOffset: { width: 0, height: 2 }
+};
+
 const styles = StyleSheet.create({
-  AnimatedView: {
+  container: {
     flex: 1,
-    marginTop: 30,
-    display: "flex",
-    justifyContent: "center",
-    backgroundColor: "#e8e9f1ff"
+    backgroundColor: COLORES.fondo
   },
-  header: {
-    width: "100%",
-    height: "6%",
-    backgroundColor: ""
+  encabezado: {
+    paddingHorizontal: 16,
+    paddingBottom: 20,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24
   },
-  main: {
-    width: "100%",
-    height: "50%",
-    backgroundColor: "",
-    display: "flex",
+  filaEncabezado: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingTop: 12
+  },
+  botonRegresar: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "rgba(255,255,255,0.2)",
     alignItems: "center",
     justifyContent: "center"
   },
-  footer: {
-    width: "100%",
-    height: "47%",
-    backgroundColor: "",
-    display: "flex",
+  iconoRegresar: {
+    width: 22,
+    height: 22,
+    tintColor: "#ffffff",
+    resizeMode: "contain"
+  },
+  titulo: {
+    color: "#ffffff",
+    fontSize: 20,
+    fontWeight: "700"
+  },
+  subtitulo: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 13,
+    marginTop: 2
+  },
+  contenido: {
+    padding: 16,
+    paddingBottom: 24
+  },
+  tarjetaResumen: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: COLORES.tarjeta,
+    borderRadius: 18,
+    padding: 16,
+    ...sombra
+  },
+  circuloResumen: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: COLORES.verdeOscuro,
+    alignItems: "center",
     justifyContent: "center",
-
-    flexDirection: "row"
+    marginRight: 14
+  },
+  iconoResumen: {
+    width: 28,
+    height: 28,
+    tintColor: "#ffffff",
+    resizeMode: "contain"
+  },
+  numeroResumen: {
+    fontSize: 26,
+    fontWeight: "800",
+    color: COLORES.verdeOscuro
+  },
+  textoResumen: {
+    fontSize: 13,
+    color: COLORES.textoSuave
+  },
+  aviso: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 14,
+    padding: 12,
+    marginTop: 12,
+    borderWidth: 1
+  },
+  avisoOk: {
+    backgroundColor: COLORES.verdeSuave,
+    borderColor: COLORES.verde
+  },
+  avisoError: {
+    backgroundColor: COLORES.errorSuave,
+    borderColor: COLORES.error
+  },
+  iconoAviso: {
+    width: 18,
+    height: 18,
+    marginRight: 10,
+    resizeMode: "contain"
+  },
+  textoAviso: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "600"
+  },
+  tituloSeccion: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: COLORES.textoSuave,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    marginTop: 24,
+    marginBottom: 10
+  },
+  filaSeccion: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 24,
+    marginBottom: 10
+  },
+  enlace: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: COLORES.verdeOscuro
+  },
+  tarjeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: COLORES.tarjeta,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1.5,
+    borderColor: "transparent",
+    ...sombra
+  },
+  tarjetaSeleccionada: {
+    borderColor: COLORES.verde
+  },
+  tarjetaError: {
+    borderColor: COLORES.error,
+    backgroundColor: "#fffafa"
+  },
+  circuloIcono: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 14
+  },
+  iconoOpcion: {
+    width: 24,
+    height: 24,
+    resizeMode: "contain"
+  },
+  tituloOpcion: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: COLORES.texto
+  },
+  descripcionOpcion: {
+    fontSize: 12,
+    color: COLORES.textoSuave,
+    marginTop: 2
+  },
+  filaEstado: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 6
+  },
+  iconoEstado: {
+    width: 14,
+    height: 14,
+    marginRight: 6,
+    resizeMode: "contain"
+  },
+  mensajeEstado: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: "600"
+  },
+  verDetalle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: COLORES.error,
+    marginTop: 4
+  },
+  control: {
+    width: 32,
+    alignItems: "center",
+    marginLeft: 8
+  },
+  casilla: {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: COLORES.gris,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  casillaMarcada: {
+    backgroundColor: COLORES.verdeOscuro,
+    borderColor: COLORES.verdeOscuro
+  },
+  iconoCasilla: {
+    width: 14,
+    height: 14,
+    tintColor: "#ffffff",
+    resizeMode: "contain"
+  },
+  pie: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 12,
+    backgroundColor: COLORES.fondo
+  },
+  botonPrincipal: {
+    borderRadius: 14
   }
 });

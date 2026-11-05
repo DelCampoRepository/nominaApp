@@ -1,58 +1,72 @@
-import {ImageSourcePropType,  TouchableOpacity, View, StyleSheet, Image, Text} from "react-native";
-import { RootStackParamList } from "../../../types/types";
-import {NativeStackScreenProps} from "@react-navigation/native-stack";
-import { Alert, useWindowDimensions } from 'react-native';
-type ScreenName = keyof RootStackParamList;
-type Props = NativeStackScreenProps<RootStackParamList, "Inicio">;
+import { ImageSourcePropType, Pressable, View, StyleSheet, Image, Text } from "react-native";
 
 type ItemProps = {
   icono: ImageSourcePropType;
-  label: string;
-  label2: string;
-  screen: ScreenName;
-  navigation: Props["navigation"];
-  onPress: (screen: ScreenName) => void;
+  titulo: string;
+  descripcion: string;
+  ancho: number;
+  onPress: () => void;
 };
 
-
-export const OptionCard = ({
-  label,
-  label2,
-  icono,
-  screen,
-  onPress
-}: ItemProps) =>{
-
-     const { width, height } = useWindowDimensions();
-    
-    // Alert.alert("Vista",`Ancho: ${width}, Alto: ${height}`);
-    return(<TouchableOpacity style={[styles.Card,{width: "45%",  height: width <500?  120 :180,  marginVertical:10, elevation:5}]} onPress={() => onPress(screen)}>
-        <View style={{flexDirection:  "column", alignItems: "flex-start", justifyContent: "space-between"}}>
-           <View style={{marginRight: 10, paddingBottom:width < 500 ? 20 : 45}}>
-             <Image source={icono} style={{width: width < 500 ? 40 : 60, height: width < 500 ? 40 : 60 ,tintColor: "#13c044" }} />
-           </View>
-            <View>
-                <Text style={[styles.Text,{fontSize: width < 500 ? 13 : 15.5}]}>{label} {label2}</Text>
-            </View>
-            
-        </View>
-    </TouchableOpacity>);
-
-}
+export const OptionCard = ({ icono, titulo, descripcion, ancho, onPress }: ItemProps) => (
+  <Pressable
+    onPress={onPress}
+    style={({ pressed }) => [
+      styles.card,
+      { width: ancho },
+      pressed && styles.presionada
+    ]}
+  >
+    <View style={styles.circuloIcono}>
+      <Image source={icono} style={styles.icono} />
+    </View>
+    <Text style={styles.titulo} numberOfLines={2}>
+      {titulo}
+    </Text>
+    <Text style={styles.descripcion} numberOfLines={2}>
+      {descripcion}
+    </Text>
+  </Pressable>
+);
 
 const styles = StyleSheet.create({
-    Card: {
-        backgroundColor: "#ffffff",
-        borderRadius:3,
-        padding: 20,
-        borderWidth:1,
-        borderColor:"black",
-        justifyContent: "center",
-        alignItems:'flex-start',
-        marginHorizontal: "auto", 
-    }, 
-    Text: {
-        color: "black",
-      
-    }
-})
+  card: {
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    padding: 16,
+    minHeight: 140,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 }
+  },
+  presionada: {
+    opacity: 0.85,
+    transform: [{ scale: 0.97 }]
+  },
+  circuloIcono: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: "#e3f6e9",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 14
+  },
+  icono: {
+    width: 26,
+    height: 26,
+    tintColor: "#008445"
+  },
+  titulo: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#1f2933"
+  },
+  descripcion: {
+    fontSize: 12,
+    color: "#6b7280",
+    marginTop: 4
+  }
+});

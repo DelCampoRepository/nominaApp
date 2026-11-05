@@ -5,12 +5,13 @@ import {
   StyleSheet,
   Image,
   ImageSourcePropType,
-  Modal,
   Pressable,
   ScrollView
 } from "react-native";
 import { Text, ActivityIndicator, ProgressBar, Button } from "react-native-paper";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
+// Íconos PNG de assets/: las fuentes de íconos (@expo/vector-icons) no se
+// muestran en la build de la app.
+const ICONO_REINTENTAR = require("../assets/sync.png");
 import React, { useContext, useEffect, useRef, useState } from "react";
 import {
   initDB,
@@ -35,7 +36,8 @@ import {
   eliminarDatos
 } from "../src/services/local/guardarListaDeEmpleadosEnDbLocal";
 import { IRespuestaTransferenciaCat } from "../src/interfaces/IRespuestaTransferenciaCat1";
-import { hayInternet } from "../src/utils/conexion";
+import { ErrorPaso, aErrorPaso, errorListaVacia, exigirInternet } from "../src/utils/sincronizacion";
+import ModalErrorSincronizacion from "../src/components/ModalErrorSincronizacion";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Loading">;
 
@@ -92,38 +94,6 @@ const estadoInicial = (): Record<ClavePaso, InfoPaso> =>
     {} as Record<ClavePaso, InfoPaso>
   );
 
-// Error de un paso: `message` es lo que ve el usuario y `detalle` la causa.
-class ErrorPaso extends Error {
-  detalle?: string;
-  constructor(mensaje: string, detalle?: string) {
-    super(mensaje);
-    this.detalle = detalle;
-  }
-}
-
-// Los servicios devuelven [] tanto si el usuario no tiene datos como si falló
-// la petición; se revisa la conexión para dar un motivo más preciso.
-async function errorListaVacia(entidad: string): Promise<ErrorPaso> {
-  if (!(await hayInternet())) {
-    return new ErrorPaso(
-      `No se pudieron descargar los ${entidad}.`,
-      "Se perdió la conexión a internet durante la descarga. Verifique su señal y presione Reintentar."
-    );
-  }
-  return new ErrorPaso(
-    `El servidor no devolvió ${entidad} para este usuario.`,
-    `Puede que el usuario no tenga ${entidad} asignados o que el servidor no haya respondido correctamente. Se conservan los datos que ya había en el dispositivo.`
-  );
-}
-
-async function exigirInternet() {
-  if (!(await hayInternet())) {
-    throw new ErrorPaso(
-      "No hay conexión a internet.",
-      "Verifique su señal y presione Reintentar."
-    );
-  }
-}
 
 type Fase = "sincronizando" | "completo" | "conErrores" | "critico";
 
@@ -247,10 +217,7 @@ export default function LoadingScreen({ route, navigation }: Props) {
         actualizarPaso(paso.clave, { estado: "ok", mensaje });
       } catch (e: any) {
         huboError = true;
-        const error =
-          e instanceof ErrorPaso
-            ? e
-            : new ErrorPaso("Ocurrió un error inesperado.", String(e?.message ?? e));
+        const error = aErrorPaso(e);
         actualizarPaso(paso.clave, {
           estado: "error",
           mensaje: error.message,
@@ -344,7 +311,7 @@ export default function LoadingScreen({ route, navigation }: Props) {
           <Button mode="outlined" textColor={COLORES.verdeOscuro} style={[styles.boton, styles.botonContorno]} onPress={() => navigation.navigate("Inicio")}>
             Continuar
           </Button>
-          <Button mode="contained" buttonColor={COLORES.verdeOscuro} style={styles.boton} icon="refresh" onPress={reintentar}>
+          <Button mode="contained" buttonColor={COLORES.verdeOscuro} style={styles.boton} icon={ICONO_REINTENTAR} onPress={reintentar}>
             Reintentar
           </Button>
         </View>
@@ -355,49 +322,21 @@ export default function LoadingScreen({ route, navigation }: Props) {
           <Button mode="outlined" textColor={COLORES.verdeOscuro} style={[styles.boton, styles.botonContorno]} onPress={volverAlLogin}>
             Ir al login
           </Button>
-          <Button mode="contained" buttonColor={COLORES.verdeOscuro} style={styles.boton} icon="refresh" onPress={reintentar}>
+          <Button mode="contained" buttonColor={COLORES.verdeOscuro} style={styles.boton} icon={ICONO_REINTENTAR} onPress={reintentar}>
             Reintentar
           </Button>
         </View>
       )}
 
-      <Modal
+      <ModalErrorSincronizacion
         visible={!!detalle}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPasoDetalle(null)}
-      >
-        <Pressable style={styles.fondoModal} onPress={() => setPasoDetalle(null)}>
-          <Pressable style={styles.modal} onPress={() => {}}>
-            <View style={styles.iconoModal}>
-              <MaterialCommunityIcons name="alert-circle-outline" size={34} color={COLORES.error} />
-            </View>
-            <Text style={styles.tituloModal}>Error en {detalle?.titulo}</Text>
-            <Text style={styles.mensajeModal}>{detalle?.error?.mensaje}</Text>
-            {!!detalle?.error?.detalle && (
-              <View style={styles.cajaDetalle}>
-                <Text style={styles.etiquetaDetalle}>Detalle</Text>
-                <Text style={styles.textoDetalle}>{detalle.error.detalle}</Text>
-              </View>
-            )}
-            <View style={styles.accionesModal}>
-              <Button mode="outlined" textColor={COLORES.verdeOscuro} style={[styles.boton, styles.botonContorno]} onPress={() => setPasoDetalle(null)}>
-                Cerrar
-              </Button>
-              <Button
-                mode="contained"
-                buttonColor={COLORES.verdeOscuro}
-                style={styles.boton}
-                icon="refresh"
-                disabled={fase === "sincronizando"}
-                onPress={reintentar}
-              >
-                Reintentar
-              </Button>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+        titulo={detalle?.titulo ?? ""}
+        mensaje={detalle?.error?.mensaje}
+        detalle={detalle?.error?.detalle}
+        onCerrar={() => setPasoDetalle(null)}
+        onReintentar={reintentar}
+        reintentarDeshabilitado={fase === "sincronizando"}
+      />
     </SafeAreaView>
   );
 }
@@ -464,9 +403,15 @@ function FilaPaso({ titulo, icono, estado, mensaje, ultimo, onPress }: FilaPasoP
         </View>
         <View style={styles.estado}>
           {estado === "proceso" && <ActivityIndicator size={20} color={COLORES.verde} />}
-          {estado === "ok" && <MaterialCommunityIcons name="check-circle" size={24} color={COLORES.verde} />}
-          {estado === "error" && <MaterialCommunityIcons name="chevron-right" size={26} color={COLORES.error} />}
-          {estado === "pendiente" && <MaterialCommunityIcons name="clock-outline" size={22} color={COLORES.gris} />}
+          {estado === "ok" && (
+            <View style={styles.insigniaOk}>
+              <Image source={require("../assets/check-bold.png")} style={[styles.iconoEstado, { width: 14, height: 14, tintColor: "#ffffff" }]} />
+            </View>
+          )}
+          {estado === "error" && (
+            <Image source={require("../assets/arrow-left.png")} style={[styles.iconoEstado, styles.flechaDerecha, { tintColor: COLORES.error }]} />
+          )}
+          {estado === "pendiente" && <View style={styles.puntoPendiente} />}
         </View>
       </Pressable>
     </View>
@@ -580,6 +525,29 @@ const styles = StyleSheet.create({
   tarjetaProceso: {
     borderColor: COLORES.verde
   },
+  iconoEstado: {
+    resizeMode: "contain"
+  },
+  insigniaOk: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: COLORES.verde,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  flechaDerecha: {
+    width: 20,
+    height: 20,
+    transform: [{ rotate: "180deg" }]
+  },
+  puntoPendiente: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: COLORES.gris
+  },
   tarjetaError: {
     borderColor: COLORES.error,
     backgroundColor: "#fffafa"
@@ -617,61 +585,4 @@ const styles = StyleSheet.create({
   botonContorno: {
     borderColor: COLORES.verdeOscuro
   },
-  fondoModal: {
-    flex: 1,
-    backgroundColor: "rgba(17, 24, 39, 0.45)",
-    justifyContent: "center",
-    padding: 24
-  },
-  modal: {
-    backgroundColor: COLORES.tarjeta,
-    borderRadius: 20,
-    padding: 20,
-    alignItems: "center"
-  },
-  iconoModal: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: COLORES.errorSuave,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 12
-  },
-  tituloModal: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: COLORES.texto,
-    textAlign: "center"
-  },
-  mensajeModal: {
-    fontSize: 14,
-    color: COLORES.texto,
-    textAlign: "center",
-    marginTop: 8
-  },
-  cajaDetalle: {
-    alignSelf: "stretch",
-    backgroundColor: COLORES.grisSuave,
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 14
-  },
-  etiquetaDetalle: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: COLORES.textoSuave,
-    marginBottom: 4,
-    textTransform: "uppercase"
-  },
-  textoDetalle: {
-    fontSize: 13,
-    color: COLORES.texto
-  },
-  accionesModal: {
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 18,
-    alignSelf: "stretch"
-  }
 });

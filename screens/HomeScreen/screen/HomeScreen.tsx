@@ -1,220 +1,413 @@
-import React, { useRef } from "react";
-import {  useWindowDimensions } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   StyleSheet,
   View,
   Text,
+  Image,
   ImageSourcePropType,
   BackHandler,
-  FlatList,
-  Animated
+  Animated,
+  ScrollView,
+  Pressable,
+  Alert,
+  useWindowDimensions
 } from "react-native";
-import {  Avatar } from "react-native-paper";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { SafeAreaView, SafeAreaProvider } from "react-native-safe-area-context";
+import { useFocusEffect } from "@react-navigation/native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
+import dayjs from "dayjs";
+import "dayjs/locale/es";
 import { RootStackParamList } from "../../../types/types";
-import { useEffect } from "react";
 import { useHandleSalir } from "../../../src/hooks/useHandleSalir";
 import { useUser } from "../../../src/context/userContext";
+import { SeleccionarAvancesEmpleadosASyncronizar } from "../../../src/services/sqlite";
+import { ConsultarSemanaActiva } from "../../../src/utils/ObtenerSemanaActiva";
+import { obtenerFecha } from "../../../src/utils/GenerarFecha";
 import { OptionCard } from "../components/OptionCard";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Inicio">;
-//declaramos un typo de nombre boton , quien herede de boton tendra estos elementos
-type Boton = {
-  index: string;
-  icon: ImageSourcePropType;
-  label: string;
-  label2: string;
-  screen: ScreenName;
+
+// Pantallas a las que se navega sin parámetros.
+type RutaSinParametros = {
+  [K in keyof RootStackParamList]: RootStackParamList[K] extends undefined ? K : never;
+}[keyof RootStackParamList];
+
+type Opcion = {
+  titulo: string;
+  descripcion: string;
+  icono: ImageSourcePropType;
+  pantalla: RutaSinParametros;
 };
 
-type ScreenName = keyof RootStackParamList;
-
-const botones: Boton[] = [
+const SECCIONES: { titulo: string; opciones: Opcion[] }[] = [
   {
-    index: "1",
-    icon: require("../../../assets/land-plots.png"),
-    label: "Actividades",
-    label2: "en lote",
-    screen: "ActividadesLote"
+    titulo: "Captura",
+    opciones: [
+      {
+        titulo: "Actividades en lote",
+        descripcion: "Asigna actividades al lote",
+        icono: require("../../../assets/land-plots.png"),
+        pantalla: "ActividadesLote"
+      },
+      {
+        titulo: "Actividades en nave",
+        descripcion: "Selecciona actividades por nave",
+        icono: require("../../../assets/hoop-housew.png"),
+        pantalla: "ActividadesNave"
+      },
+      {
+        titulo: "Registrar empleados",
+        descripcion: "Captura empleados por nave",
+        icono: require("../../../assets/account-box-edit-outlinew.png"),
+        pantalla: "Empleados"
+      },
+      {
+        titulo: "Avances",
+        descripcion: "Registra avances por actividad",
+        icono: require("../../../assets/chart-line-variantw.png"),
+        pantalla: "Avances"
+      }
+    ]
   },
   {
-    index: "2",
-    icon: require("../../../assets/hoop-housew.png"),
-    label: "Actividades",
-    label2: "en nave",
-    screen: "ActividadesNave"
-  },
-  {
-    index: "3",
-    icon: require("../../../assets/account-box-edit-outlinew.png"),
-    label: "Registrar",
-    label2: "empleados",
-    screen: "Empleados"
-  },
-  {
-    index: "4",
-    icon: require("../../../assets/chart-line-variantw.png"),
-    label: "Avances",
-    label2: "",
-    screen: "Avances"
-  },
-  {
-    index: "5",
-    icon: require("../../../assets/file-chart-outlinew.png"),
-    label: "Reporte",
-    label2: "de avances",
-    screen: "ReporteAvances"
-  },
-  {
-    index: "6",
-    icon: require("../../../assets/syncw.png"),
-    label: "Sincronizar",
-    label2: "",
-    screen: "Transferir"
-  },
-  {
-    index: "7",
-    icon: require("../../../assets/logoutw.png"),
-    label: "Salir",
-    label2: "",
-    screen: "Login"
-  },{
-    index: "8",
-    icon: require("../../../assets/account-cowboy-hat.png"),
-    label: "Obt. avances",
-    label2: "jefe de nave",
-    screen: "Pagos"
+    titulo: "Consultas",
+    opciones: [
+      {
+        titulo: "Reporte de avances",
+        descripcion: "Resumen del día por nave",
+        icono: require("../../../assets/file-chart-outlinew.png"),
+        pantalla: "ReporteAvances"
+      },
+      {
+        titulo: "Avances jefe de nave",
+        descripcion: "Obtén avances del servidor",
+        icono: require("../../../assets/account-cowboy-hat.png"),
+        pantalla: "Pagos"
+      }
+    ]
   }
-
 ];
 
-/**
- * 
- * 
- * ,{
-    index: "9",
-    icon: require("../../../assets/view-list.png"),
-    label: "Empleados",
-    label2: "seleccionados",
-    screen: "EmpleadosSeleccionados"
-  }
- * 
- */
+const COLORES = {
+  fondo: "#e5e9f4",
+  verde: "#13c044",
+  verdeOscuro: "#008445",
+  verdeSuave: "#e3f6e9",
+  texto: "#1f2933",
+  textoSuave: "#6b7280"
+};
+
+const MARGEN = 16;
+const SEPARACION = 12;
+
 export default function HomeScreen({ navigation }: Props) {
+  const { nombreUsuario } = useUser();
+  const { HandleSalir } = useHandleSalir();
+  const { width } = useWindowDimensions();
 
- //const { width, height } = useWindowDimensions();
- const { nombreUsuario } = useUser();
- const fadeAnimInputs = useRef(new Animated.Value(0)).current;
- const translateYInputs = useRef(new Animated.Value(100)).current;
- const { HandleSalir } = useHandleSalir();
+  const [semana, setSemana] = useState<string>("");
+  const [avancesHoy, setAvancesHoy] = useState<number | null>(null);
 
-  const handleBotones = async (screen: ScreenName) => {
-    switch (screen) {
-      case "Login":
-        await HandleSalir();
-        navigation.navigate(screen );
-        break;
-      default:
-        navigation.navigate(screen);
-        break;
-    }
-  };
+  const opacidad = useRef(new Animated.Value(0)).current;
+  const desplazamiento = useRef(new Animated.Value(40)).current;
+
+  const columnas = width >= 600 ? 3 : 2;
+  // floor: con decimales, el redondeo del layout puede pasar la última
+  // tarjeta de cada fila a la siguiente.
+  const anchoTarjeta = Math.floor(
+    (width - MARGEN * 2 - SEPARACION * (columnas - 1)) / columnas
+  );
+  const fecha = dayjs().locale("es").format("dddd D [de] MMMM");
+  const fechaHoy = fecha.charAt(0).toUpperCase() + fecha.slice(1);
+
+  // Se recalcula cada vez que se vuelve a Inicio (p. ej. después de capturar
+  // avances o de sincronizar).
+  useFocusEffect(
+    useCallback(() => {
+      let activo = true;
+      (async () => {
+        try {
+          const semanaActiva = await ConsultarSemanaActiva();
+          const avances = await SeleccionarAvancesEmpleadosASyncronizar(
+            semanaActiva,
+            obtenerFecha()
+          );
+          if (!activo) return;
+          setSemana(String(semanaActiva ?? ""));
+          setAvancesHoy(avances.filter((a) => Number(a.avance) !== 0).length);
+        } catch {
+          if (activo) setAvancesHoy(null);
+        }
+      })();
+      return () => {
+        activo = false;
+      };
+    }, [])
+  );
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(fadeAnimInputs, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true
-      }),
-      Animated.timing(translateYInputs, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true
-      })
+      Animated.timing(opacidad, { toValue: 1, duration: 500, useNativeDriver: true }),
+      Animated.timing(desplazamiento, { toValue: 0, duration: 400, useNativeDriver: true })
     ]).start();
   }, []);
 
   useEffect(() => {
-    const backHandler = BackHandler.addEventListener(
-      "hardwareBackPress",
-      () => true
-    );
-
+    // Inicio es la raíz después del login: el botón atrás no regresa a Login/Loading.
+    const backHandler = BackHandler.addEventListener("hardwareBackPress", () => true);
     return () => backHandler.remove();
   }, []);
 
+  const salir = () => {
+    Alert.alert("Cerrar sesión", "¿Desea salir de la aplicación?", [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Salir",
+        style: "destructive",
+        onPress: async () => {
+          await HandleSalir();
+          navigation.navigate("Login");
+        }
+      }
+    ]);
+  };
+
+  const textoAvances =
+    avancesHoy === null
+      ? "Envía al servidor los avances capturados hoy"
+      : avancesHoy === 0
+        ? "Aún no hay avances registrados hoy"
+        : `${avancesHoy} ${avancesHoy === 1 ? "avance registrado" : "avances registrados"} hoy`;
+
   return (
-    <SafeAreaProvider>
-      <SafeAreaView style={styles.container}>
-        <Animated.View style={[styles.animatedView, { opacity: fadeAnimInputs, transform: [{ translateY: translateYInputs }] }]}> 
-          <View style={{flex: 1}}>
-            <View style={styles.header}>
-              <Avatar.Icon
-                color="black"
-                style={{ backgroundColor: "#e5e9f4ff", paddingLeft: 0 }}
-                size={50}
-                icon={require("../../../assets/account.png")}
+    <SafeAreaView style={styles.container} edges={["bottom", "left", "right"]}>
+      <LinearGradient
+        colors={[COLORES.verde, COLORES.verdeOscuro]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.encabezado}
+      >
+        <SafeAreaView edges={["top"]}>
+          <View style={styles.filaEncabezado}>
+            <View style={styles.avatar}>
+              <Image
+                source={require("../../../assets/account.png")}
+                style={[styles.iconoImg, { width: 28, height: 28, tintColor: COLORES.verdeOscuro }]}
               />
-              <Text style={styles.Text}>{nombreUsuario}</Text>
             </View>
-            <FlatList
-              data={botones}
-              contentContainerStyle={{  justifyContent: 'center', flexGrow: 1 }}
-              keyExtractor={(item) => item.index}
-              numColumns={  2}
-              horizontal={false}
-              renderItem={({ item, index }) => (  
-                <OptionCard
-                  label={item.label}
-                  label2={item.label2}
-                  icono={item.icon}
-                  screen={item.screen}
-                  navigation={navigation}
-                  onPress={handleBotones}
-                />
-              )}
-            />
+            <View style={{ flex: 1, marginHorizontal: 12 }}>
+              <Text style={styles.saludo}>Hola,</Text>
+              <Text style={styles.nombre} numberOfLines={1}>
+                {nombreUsuario ?? "Usuario"}
+              </Text>
+            </View>
+            <Pressable
+              onPress={salir}
+              hitSlop={8}
+              style={({ pressed }) => [styles.botonSalir, pressed && { opacity: 0.7 }]}
+            >
+              <Image
+                source={require("../../../assets/logout.png")}
+                style={[styles.iconoImg, { width: 22, height: 22, tintColor: "#ffffff" }]}
+              />
+            </Pressable>
           </View>
-        </Animated.View>
-      </SafeAreaView>
-    </SafeAreaProvider>
+
+          <View style={styles.chips}>
+            <View style={styles.chip}>
+              <Image source={require("../../../assets/calendar-range.png")} style={styles.iconoChip} />
+              <Text style={styles.textoChip}>{fechaHoy}</Text>
+            </View>
+            {!!semana && (
+              <View style={styles.chip}>
+                <Image source={require("../../../assets/calendar-range.png")} style={styles.iconoChip} />
+                <Text style={styles.textoChip}>Semana {semana}</Text>
+              </View>
+            )}
+          </View>
+        </SafeAreaView>
+      </LinearGradient>
+
+      <Animated.View
+        style={{ flex: 1, opacity: opacidad, transform: [{ translateY: desplazamiento }] }}
+      >
+        <ScrollView contentContainerStyle={styles.contenido} showsVerticalScrollIndicator={false}>
+          <Pressable
+            onPress={() => navigation.navigate("Transferir")}
+            style={({ pressed }) => [styles.tarjetaSincronizar, pressed && styles.presionada]}
+          >
+            <View style={styles.iconoSincronizar}>
+              <Image source={require("../../../assets/syncw.png")} style={styles.imagenSincronizar} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.tituloSincronizar}>Sincronizar</Text>
+              <Text style={styles.textoSincronizar}>{textoAvances}</Text>
+            </View>
+            <Image
+              source={require("../../../assets/arrow-left.png")}
+              style={[styles.iconoImg, styles.flechaDerecha, { tintColor: COLORES.verdeOscuro }]}
+            />
+          </Pressable>
+
+          {SECCIONES.map((seccion) => (
+            <View key={seccion.titulo}>
+              <Text style={styles.tituloSeccion}>{seccion.titulo}</Text>
+              <View style={styles.cuadricula}>
+                {seccion.opciones.map((opcion) => (
+                  <OptionCard
+                    key={opcion.pantalla}
+                    titulo={opcion.titulo}
+                    descripcion={opcion.descripcion}
+                    icono={opcion.icono}
+                    ancho={anchoTarjeta}
+                    onPress={() => navigation.navigate(opcion.pantalla)}
+                  />
+                ))}
+              </View>
+            </View>
+          ))}
+        </ScrollView>
+      </Animated.View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: "#e5e9f4ff",
-    flex: 1
-  },
-  item: {
-    borderRadius: 5,
-    backgroundColor: "#008445",
-    marginVertical: 4,
-    marginHorizontal: 4,
-    width: 170,
-    height: 100,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84
-  },
-  title: {
-    fontSize: 32
-  }, 
-  animatedView:{
     flex: 1,
-    marginTop: 30,
-    display: "flex",
-    justifyContent: "center",
-           
-  }, 
-  Text: {
-    color: "Black",
-   
-    fontSize: 18
+    backgroundColor: COLORES.fondo
   },
-  header:{width: "100%", height: "10%", flexDirection: "row", alignItems: "center", paddingHorizontal: 10}
-  
+  encabezado: {
+    paddingHorizontal: MARGEN,
+    paddingBottom: 20,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24
+  },
+  filaEncabezado: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingTop: 12
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  saludo: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 13
+  },
+  nombre: {
+    color: "#ffffff",
+    fontSize: 20,
+    fontWeight: "700"
+  },
+  botonSalir: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  chips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 16
+  },
+  chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6
+  },
+  // Íconos PNG de assets/: las fuentes de íconos (@expo/vector-icons) no se
+  // muestran en la build de la app.
+  iconoImg: {
+    resizeMode: "contain"
+  },
+  iconoChip: {
+    width: 14,
+    height: 14,
+    tintColor: "#ffffff",
+    resizeMode: "contain"
+  },
+  flechaDerecha: {
+    width: 22,
+    height: 22,
+    transform: [{ rotate: "180deg" }]
+  },
+  textoChip: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "600"
+  },
+  contenido: {
+    padding: MARGEN,
+    paddingBottom: 32
+  },
+  tarjetaSincronizar: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: COLORES.verde,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 }
+  },
+  presionada: {
+    opacity: 0.85,
+    transform: [{ scale: 0.98 }]
+  },
+  iconoSincronizar: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: COLORES.verdeOscuro,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 14
+  },
+  imagenSincronizar: {
+    width: 26,
+    height: 26,
+    tintColor: "#ffffff"
+  },
+  tituloSincronizar: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: COLORES.texto
+  },
+  textoSincronizar: {
+    fontSize: 13,
+    color: COLORES.textoSuave,
+    marginTop: 2
+  },
+  tituloSeccion: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: COLORES.textoSuave,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    marginTop: 24,
+    marginBottom: 10
+  },
+  cuadricula: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SEPARACION
+  }
 });
