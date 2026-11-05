@@ -25,20 +25,10 @@ import { AuthProvider } from "./src/context/AuthContext";
 import { theme } from "./screens/theme";
 import { RootStackParamList } from "./types/types";
 
-//import HomeScreen from "./screens/HomeScreen";
-//import EmpleadosScreen from "./screens/EmpleadosScreen";
-//import ListaEmpleadosScreen from "./screens/ListaEmpleadosScreen";
-//import ActividadesLoteScreen from "./screens/ActividadesLoteScreen";
-//import ActividadesNaveScreen from "./screens/ActividadesNaveScreen";
-//import ListaNavesScreen from "./screens/ListaNavesScreen";
-//import AvancesSCreen from "./screens/AvancesScreen";
-//import AvancesxActividadesScreen from "./screens/AvancesxActividadesScreen";
-//import PatallaPagos from "./screens/PantallaPagos";
-
 import QrScannerScreen from "./screens/QrScannerScreen";
 
 import EmpleadosScreen from "./screens/EmpleadosScreen/screen/EmpleadosScreen";
-import LoginScreen from "./screens/LoginScreen";
+import LoginScreen from "./screens/LoginScreen/screen/LoginScreen";
 
 import ActividadesLoteScreen from "./screens/ActividadesLoteScreen/screen/ActividadesLotesScreen";
 import ActividadesNaveScreen from "./screens/ActividadesNaveScreen/screen/ActividadesNaveScreen";
@@ -47,12 +37,12 @@ import AvancesxActividadesScreen from "./screens/AvancesPorActividadScreen/scree
 
 import AvancesScreen from "./screens/AvancesScreen/screen/AvancesScreen";
 import ReporteAvancesScreen from "./screens/ReportesScreen/screen/ReporteAvancesScreen"
-import TransferirScreen from "./screens/TrasferirScreen";
+import TransferirScreen from "./screens/TrasferirScreen/screen/TrasferirScreen";
 
 import { EmployeeProvider } from "./src/context/QrContext";
 import { NaveProvider } from "./src/context/NaveContext";
 import { UsuarioProvider } from "./src/context/userContext";
-import LoadingScreen from "./screens/LoadingScreen";
+import LoadingScreen from "./screens/LoadingScreen/screen/LoadingScreen";
 
 import PatallaPagosScreen from "./screens/PantallaPagosScreen/screen/PantallaPagosScreen";
 import EmpleadosSeleccionadosScreen from "./screens/EmpleadosSeleccionadosScreen/screen/EmpleadosSeleccionadosScreen";
