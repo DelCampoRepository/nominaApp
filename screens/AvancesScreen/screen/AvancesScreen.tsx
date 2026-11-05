@@ -1,201 +1,194 @@
 import { RootStackParamList } from "../../../types/types";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-import { StyleSheet, TouchableOpacity, View, Text, Image} from "react-native";
-import Header from "../../../src/components/Header";
-import { useEffect, useState } from "react";
-import { IListaLotesxUsuario } from "../../../src/interfaces/local/IListaLotesxUsuario";
-import { obtenerListaLotesxUsuarioSqLite } from "../../../src/services/local/guardarListaDeLotesEnDbLocal";
-import { obtenerListaNavesSqlite } from "../../../src/services/local/guardarListaDeNavesEnDbLocal";
-import { IRespuestaObtenerNavesxUsuario } from "../../../src/interfaces/IRespuestaObtenerNavesxUsuario";
-import ModalLotes from "../components/ModalLotes";
-import ModalNaves from "../components/ModalNaves";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { StyleSheet, View, Text, ScrollView } from "react-native";
+import { Button, ActivityIndicator } from "react-native-paper";
+import React from "react";
+import ModalSelector from "../../../src/components/ModalSelector";
+import {
+  COLORES,
+  EncabezadoVerde,
+  TarjetaSelectores,
+  SelectorPaso,
+  AvisoResultado,
+  EstadoVacio
+} from "../../../src/components/PantallaSeleccion";
+import { useAvances } from "../hooks/useAvances";
+import TarjetaActividad from "../components/TarjetaActividad";
+import { ICONO_ACTIVIDAD, ICONO_LOTE, ICONO_NAVE, claveActividad } from "../utils";
 
-import { ConsultarSemanaActiva } from "../../../src/utils/ObtenerSemanaActiva";
-import { obtenerFecha } from "../../../src/utils/GenerarFecha";
-import { IdatosActividadesNaves } from "../../../src/interfaces/local/IdatosActNave";
-import { SeleccionarActEnNaves } from "../../../src/services/sqlite";
-import { CustomTable } from "../components/CustomTable";
-type Props = NativeStackScreenProps<RootStackParamList, "Avances">
+type Props = NativeStackScreenProps<RootStackParamList, "Avances">;
 
 export default function AvancesScreen({ navigation }: Props) {
- 
+  const a = useAvances(navigation);
 
-const [modalLotes, setModalaLotes] = useState(false);
-const [modalNaves, setModalNaves] = useState(false);
-const [datosLote, setDatosLote   ] = useState({
-     codLote:"Seleccione",
-     descLote:"lote",
-     isValid:false
-   });
-const [datosNave, setDatosNave] = useState({
-    codNave:'Seleccione',
-    desNave:'nave',
-      isValid:false
-  });
-   const [listaLotes, setListaLotes]= useState<IListaLotesxUsuario[]>([]);
-   const [listaNaves, setListaNaves] = useState<IRespuestaObtenerNavesxUsuario[]>([]);
-   const [listaActividadesSec,setListaActividadesSec]= useState<IdatosActividadesNaves[]>([]);
+  const totalConAvance = a.actividades.filter((x) => (a.conteos[claveActividad(x)] ?? 0) > 0).length;
 
- 
-
-function handleLoteSeleccionado(codLote: string, descLote: string, isValid : boolean)
-  {
-        setDatosLote({
-          codLote:codLote,
-          descLote:descLote,
-          isValid: isValid
-        })
-  }
-
-
-function handleNaveSeleccionada(codNave: string, desNave: string,isValid : boolean)
-  {
-   
-    setDatosNave({
-      codNave:codNave,
-      desNave:desNave, 
-      isValid:isValid
-    })
-  }
-  
-useEffect(() => {
-       (async () => { 
-        const list = await obtenerListaLotesxUsuarioSqLite(); 
-        setListaLotes(list);})();
-  }, []);
-   
- useEffect(() => {
-    async function obtenerNaves() {
-      const listaNaves = await obtenerListaNavesSqlite(datosLote.codLote);
-      setListaNaves(listaNaves as IRespuestaObtenerNavesxUsuario[]);
-    }
-
-    if (datosLote.codLote.trim() !== "") obtenerNaves();
-  }, [datosLote.codLote]);
-
-
-  useEffect(() => {
-    if (datosNave.codNave.trim() !== "") {
-      obtenerActividadesSeleccionadas();
-    }
-    async function obtenerActividadesSeleccionadas() {
-
-
-      const seleccion = await SeleccionarActEnNaves(
-        datosLote.codLote,
-        datosNave.codNave,
-        obtenerFecha(),
-        await ConsultarSemanaActiva()
+  const renderContenido = () => {
+    if (!a.lote) {
+      return (
+        <EstadoVacio
+          icono={ICONO_LOTE}
+          titulo="Selecciona un lote"
+          texto="Elige el lote y la nave para ver las actividades del día y capturar sus avances."
+        />
       );
-
-      const filtro = seleccion.filter(
-        (res) =>
-          res.cod_lote === datosLote.codLote &&
-          res.cod_nave === datosNave.codNave
-      );
-      // console.log(JSON.stringify(filtro,null,2));
-      setListaActividadesSec(filtro as IdatosActividadesNaves[]);
     }
-  }, [datosNave.codNave]);
-      
-  return (
-  <SafeAreaProvider>
-    <SafeAreaView style={styles.centeredView}>
-        <View style={styles.formContainer}>
-         <View style={styles.header}>
-            <Header titulo="AVANCES" pantalla="Inicio"/>
-         </View>
-           <View style={{width:'100%', height:'18%', paddingTop:15}}>
-
-            <TouchableOpacity style={styles.buttonContainer} onPress={() =>setModalaLotes(true)}>
-                <Text  style={styles.text}>{datosLote.codLote}{" "}{datosLote.descLote}</Text>
-                {datosLote.isValid ? ( <Image 
-                                 source={require("../../../assets/land-plots.png")}
-                                 style={styles.image}   
-                                />):( <Text  style={{fontSize:30, fontWeight:"bold", color:"#13c044"}}>+</Text>)}
-               
-           </TouchableOpacity>
-
-            <TouchableOpacity style={styles.buttonContainer} onPress={() =>setModalNaves(true)} >
-                <Text  style={styles.text}>{datosNave.codNave}{" "}{datosNave.desNave}</Text>
-                
-                { datosNave.isValid ?
-                   (
-                    <Image 
-                       source={require("../../../assets/hoop-house.png")}
-                       style={styles.image}   
-                     />
-                   ) :(<Text  style={{fontSize:30, fontWeight:"bold", color:"#13c044"}}>+</Text>)
-                } 
-
-            </TouchableOpacity>
-           </View>
-          
-          { listaLotes.length > 0 && 
-          <ModalLotes setLote={handleLoteSeleccionado} lotes={listaLotes} setModalVisible={setModalaLotes} modalVisible={modalLotes} />
-          }
-           {
-            listaNaves.length > 0 &&
-            <ModalNaves setNave={handleNaveSeleccionada} naves={listaNaves} setModalVisible={setModalNaves} modalVisible={modalNaves} />
-          }
-           { listaActividadesSec.length > 0 &&
-            <CustomTable navigation={navigation} codNave={datosNave.codNave}  codLote={datosLote.codLote} datosLote={datosLote} datosNave={datosNave}/>
-          } 
+    if (a.naves.length === 0) {
+      return (
+        <EstadoVacio
+          icono={ICONO_NAVE}
+          titulo="Este lote no tiene naves"
+          texto="Sincroniza Naves desde la pantalla Sincronizar e intenta de nuevo."
+        />
+      );
+    }
+    if (!a.nave) {
+      return (
+        <EstadoVacio
+          icono={ICONO_NAVE}
+          titulo="Selecciona una nave"
+          texto="Elige una nave para ver sus actividades del día."
+        />
+      );
+    }
+    if (a.cargando) {
+      return <ActivityIndicator style={{ marginTop: 40 }} color={COLORES.verde} />;
+    }
+    if (a.error) {
+      return (
+        <View>
+          <AvisoResultado tipo="error" texto={a.error} />
+          <Button mode="outlined" textColor={COLORES.verdeOscuro} style={styles.botonSecundario} onPress={a.reintentar}>
+            Reintentar
+          </Button>
         </View>
+      );
+    }
+    if (a.actividades.length === 0) {
+      return (
+        <View>
+          <EstadoVacio
+            icono={ICONO_ACTIVIDAD}
+            titulo="Sin actividades para hoy"
+            texto="Esta nave no tiene actividades marcadas hoy. Márcalas en Actividades en nave para capturar sus avances."
+          />
+          <Button
+            mode="outlined"
+            textColor={COLORES.verdeOscuro}
+            style={styles.botonSecundario}
+            onPress={() => navigation.navigate("ActividadesNave")}
+          >
+            Ir a Actividades en nave
+          </Button>
+        </View>
+      );
+    }
+    return (
+      <>
+        <View style={styles.filaSeccion}>
+          <Text style={styles.tituloSeccion}>Actividades · {a.actividades.length}</Text>
+          <Text style={styles.notaSeccion}>
+            {totalConAvance} de {a.actividades.length} con avance
+          </Text>
+        </View>
+        {a.actividades.map((x) => (
+          <TarjetaActividad
+            key={`${x.cod_actividad}-${x.cod_avance}-${x.nom_actividad}`}
+            actividad={x}
+            empleadosConAvance={a.conteos[claveActividad(x)] ?? 0}
+            onPress={() => a.abrirActividad(x)}
+          />
+        ))}
+      </>
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.container} edges={["bottom", "left", "right"]}>
+      <EncabezadoVerde
+        titulo="Avances"
+        subtitulo="Elige una actividad para capturar los avances de hoy"
+        onRegresar={() => navigation.goBack()}
+      />
+
+      <TarjetaSelectores>
+        <SelectorPaso
+          paso="1"
+          etiqueta="Lote"
+          icono={ICONO_LOTE}
+          valor={a.lote}
+          placeholder="Seleccionar lote"
+          onPress={() => a.setModal("lote")}
+        />
+        <SelectorPaso
+          paso="2"
+          etiqueta="Nave"
+          icono={ICONO_NAVE}
+          valor={a.nave}
+          placeholder={a.lote ? "Seleccionar nave" : "Primero elige un lote"}
+          deshabilitado={!a.lote || a.naves.length === 0}
+          onPress={() => a.setModal("nave")}
+        />
+      </TarjetaSelectores>
+
+      <ScrollView contentContainerStyle={styles.contenido} showsVerticalScrollIndicator={false}>
+        {renderContenido()}
+      </ScrollView>
+
+      <ModalSelector
+        visible={a.modal === "lote"}
+        titulo="Selecciona un lote"
+        icono={ICONO_LOTE}
+        opciones={a.opcionesLote}
+        seleccionado={a.lote?.codigo}
+        onSeleccionar={a.elegirLote}
+        onCerrar={() => a.setModal(null)}
+      />
+      <ModalSelector
+        visible={a.modal === "nave"}
+        titulo="Selecciona una nave"
+        icono={ICONO_NAVE}
+        opciones={a.opcionesNave}
+        seleccionado={a.nave?.codigo}
+        onSeleccionar={a.elegirNave}
+        onCerrar={() => a.setModal(null)}
+      />
     </SafeAreaView>
-  </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
- centeredView: {
+  container: {
     flex: 1,
-    backgroundColor:'#e5e9f4ff',
-    justifyContent: 'center',
-    
+    backgroundColor: COLORES.fondo
   },
-  formContainer:{
-    width:'100%', 
-    height:'100%', 
-    backgroundColor:'#e5e9f4ff'
-    },
-buttonContainer:{
-  width:"95%",
-  height:50, 
-  elevation:5, 
-  alignItems:"center", 
-  justifyContent:"space-between" ,
-  flexDirection:"row", 
-  marginHorizontal:'auto',
-  backgroundColor:"white", 
-  borderRadius:10, 
-  marginVertical:5, 
-  paddingHorizontal:20,
-        borderWidth:1
-      },
-header:{
-  width:'100%',
-   height:'7%'},
-text:{
-  fontSize:14, 
-  fontWeight:"bold", 
-  color:"#333333"
-},
-image:{
-  width: 30,
-  height: 30, 
-  tintColor: "#13c044",                                        
-}
-
-
+  contenido: {
+    padding: 16,
+    paddingBottom: 24
+  },
+  filaSeccion: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 8,
+    marginBottom: 10
+  },
+  tituloSeccion: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: COLORES.textoSuave,
+    textTransform: "uppercase",
+    letterSpacing: 0.6
+  },
+  notaSeccion: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: COLORES.verdeOscuro
+  },
+  botonSecundario: {
+    alignSelf: "center",
+    borderRadius: 12,
+    borderColor: COLORES.verdeOscuro
+  }
 });
-
-/*
- { listaActividadesSec.length > 0 &&
-            <CustomTable data={listaActividadesSec} codLote={datosLote.codLote}/>
-          } 
-
-         
-         
-*/

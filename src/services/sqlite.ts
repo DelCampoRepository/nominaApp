@@ -1623,3 +1623,21 @@ export async function eliminarDatosTablaSemanaActivaSqLite() {
   
   console.log('Se eliminaron');
 }
+
+// Empleados con avance (distinto de 0) registrado hoy en cada actividad de una
+// nave. Devuelve un mapa "cod_actividad|cod_avance" -> cantidad.
+export async function ContarAvancesHoyPorActividad(
+  codLote: string,
+  codNave: string,
+  semana: string
+): Promise<Record<string, number>> {
+  const database = await getDB();
+  const filas = await database.getAllAsync<{ cod_actividad: string; cod_avance: string; total: number }>(
+    `SELECT cod_actividad, cod_avance, COUNT(DISTINCT cod_empleado) AS total
+       FROM tablaAvances
+      WHERE cod_lote = ? AND cod_nave = ? AND semanaActiva = ? AND fecha = ? AND avance != 0
+      GROUP BY cod_actividad, cod_avance`,
+    [codLote, codNave, semana, obtenerFecha()]
+  );
+  return Object.fromEntries(filas.map((f) => [`${f.cod_actividad}|${f.cod_avance}`, Number(f.total)]));
+}
