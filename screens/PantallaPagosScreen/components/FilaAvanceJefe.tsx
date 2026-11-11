@@ -2,6 +2,7 @@ import React from "react";
 import { Pressable, View, Text, Image, StyleSheet } from "react-native";
 import { IAvanceUI } from "../../../src/interfaces/IAvancesNomina";
 import { COLORES } from "../../../src/components/PantallaSeleccion";
+import { horaDe } from "../../../src/utils/GenerarFecha";
 import { capitalizar, capitalizarNombre, estaMarcado, formatear, jornales } from "../utils";
 
 type Props = {
@@ -31,6 +32,7 @@ export default function FilaAvanceJefe({ avance: a, deshabilitado, onPress }: Pr
           {capitalizarNombre(a.NombreEmpleado)}
         </Text>
         <Text style={styles.detalle} numberOfLines={1}>
+          {horaDe(a.Fecha) ? `${horaDe(a.Fecha)} · ` : ""}
           {a.Cod_empleado} · Lote {a.Cod_lote}
           {a.Nom_lote ? ` ${capitalizar(a.Nom_lote)}` : ""}
         </Text>

@@ -2,6 +2,7 @@ import React from "react";
 import { Pressable, View, Text, Image, StyleSheet } from "react-native";
 import { IAvanceEmpleado } from "../../../src/interfaces/local/IAvanceEmpleado";
 import { COLORES } from "../../../src/components/PantallaSeleccion";
+import { horaDe } from "../../../src/utils/GenerarFecha";
 import { ICONO_EMPLEADO, calcularJornales, capitalizar, formatear } from "../utils";
 
 type Props = {
@@ -27,7 +28,10 @@ export default function FilaAvanceEmpleado({ empleado, rendApli, unidad, modific
         <Image source={ICONO_EMPLEADO} style={styles.icono} />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={styles.codigo}>{empleado.cod_empleado}</Text>
+        <Text style={styles.codigo}>
+          {empleado.cod_empleado}
+          {horaDe(empleado.fechaRegistro) ? ` · ${horaDe(empleado.fechaRegistro)}` : ""}
+        </Text>
         <Text style={styles.nombre} numberOfLines={2}>
           {capitalizar(empleado.nom_empleado)}
         </Text>

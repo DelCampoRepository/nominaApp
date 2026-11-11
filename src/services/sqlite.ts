@@ -104,6 +104,7 @@ export async function initDB() {
       fecha TEXT,
       estadoSincro INTEGER DEFAULT 0,
       MensajeSincro TEXT DEFAULT '',
+      fechaRegistro TEXT,
         UNIQUE (cod_lote,cod_nave,cod_actividad,cod_avance,semanaActiva,fecha,cod_empleado)
     );
 
@@ -203,6 +204,14 @@ export async function initDB() {
   // Migracion: agrega la columna 'contra' si la tabla ya existia sin ella
   try {
     await database.execAsync(`ALTER TABLE tablaDatosUsuario ADD COLUMN contra TEXT;`);
+  } catch (error) {
+    // la columna ya existe, se ignora
+  }
+
+  // Migracion: fecha y hora del registro del avance (AAAA-MM-DD HH:mm:ss.SSS),
+  // para ordenar los avances del mas antiguo al mas reciente.
+  try {
+    await database.execAsync(`ALTER TABLE tablaAvances ADD COLUMN fechaRegistro TEXT;`);
   } catch (error) {
     // la columna ya existe, se ignora
   }
@@ -325,6 +334,17 @@ export async function guardarListajefesNave(
 
 
 
+// Fecha y hora con la que la API manda el avance ("2026-03-19 16:41:55.803").
+// Si solo trae el día, no hay hora con la cual ordenar: se guarda null.
+export function fechaHoraDeRegistro(fecha: string | null | undefined): string | null {
+  const texto = String(fecha ?? "").trim().replace("T", " ");
+  return texto.length > 10 ? texto : null;
+}
+
+// Fecha y hora actual en el mismo formato, para los avances capturados en el
+// teléfono.
+export const fechaHoraActual = () => dayjs().format("YYYY-MM-DD HH:mm:ss.SSS");
+
 export async function insertarAvanceSQLite  (
   avances: IAvanceUI[],
   semanaActiva: string
@@ -353,14 +373,16 @@ export async function insertarAvanceSQLite  (
        semanaActiva,
        fecha,
        estadoSincro,
-       MensajeSincro
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       MensajeSincro,
+       fechaRegistro
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(cod_lote,cod_nave,cod_actividad,cod_avance,semanaActiva,fecha,cod_empleado)
       DO UPDATE SET
       avance        = excluded.avance,
       avanceA       = excluded.avanceA,
       estadoSincro  = 0,
-      MensajeSincro = ''
+      MensajeSincro = '',
+      fechaRegistro = COALESCE(excluded.fechaRegistro, tablaAvances.fechaRegistro)
      `,
       [
         avance.Cod_lote,
@@ -376,7 +398,8 @@ export async function insertarAvanceSQLite  (
         semanaActiva,
         avance.Fecha.substring(0, 10),
         0,
-        ''
+        '',
+        fechaHoraDeRegistro(avance.Fecha)
       ]
     
     );
@@ -751,7 +774,8 @@ export async function SeleccionarEmpleadosCapturados(  codLote: string, codNave:
           IFNULL(B.cod_avance,'')AS cod_avance,
           IFNULL(B.des_actividad,'') AS des_actividad,
           IFNULL(B.avance, 0 )AS avance,
-          IFNULL(B.avanceA, 0)AS avanceA
+          IFNULL(B.avanceA, 0)AS avanceA,
+          B.fechaRegistro AS fechaRegistro
           FROM tablaEmpleadosSeleccionados A
           LEFT JOIN tablaAvances AS B ON
           A.cod_lote = B.cod_lote AND
@@ -782,7 +806,8 @@ export async function SeleccionarEmpleadosCapturados(  codLote: string, codNave:
           B.cod_avance,
           IFNULL(B.des_actividad, '') AS des_actividad,
           IFNULL(B.avance, 0) AS avance,
-          IFNULL(B.avanceA, 0) AS avanceA
+          IFNULL(B.avanceA, 0) AS avanceA,
+          B.fechaRegistro AS fechaRegistro
           FROM tablaAvances B
           WHERE
             B.cod_lote = ? AND
@@ -799,7 +824,11 @@ export async function SeleccionarEmpleadosCapturados(  codLote: string, codNave:
                 AND A.fecha = B.fecha
                 AND A.semana = B.semanaActiva
             )
-          ) ORDER BY grupo ASC, orden ASC
+          )
+          -- Del avance registrado mas antiguo al mas reciente. Los que aun no
+          -- tienen hora (sin avance) van al final: primero los asentados en su
+          -- orden de registro y despues los demas.
+          ORDER BY fechaRegistro IS NULL, fechaRegistro ASC, grupo ASC, orden ASC
           `,
           [
             codAct, codAvance, fecha, codLote, codNave, fecha, semana,
@@ -1187,7 +1216,11 @@ export async function ActualizarAvances(listaEmpleadosAsentar: IAvanceEmpleado [
    
 
       const result= await database.runAsync(
-      `UPDATE  tablaAvances set  avance = ? , avanceA = ?  WHERE  
+      `UPDATE  tablaAvances set  avance = ? , avanceA = ?,
+      -- La hora de registro es la de la primera vez que tuvo avance; editarlo
+      -- despues no lo mueve de lugar.
+      fechaRegistro = CASE WHEN fechaRegistro IS NULL AND ? != 0 THEN ? ELSE fechaRegistro END
+      WHERE
       cod_actividad = ? AND
       cod_avance =    ? AND
       cod_lote =      ? AND 
@@ -1200,6 +1233,8 @@ export async function ActualizarAvances(listaEmpleadosAsentar: IAvanceEmpleado [
       [
         empleado.avance  === "" ? 0 : Number( empleado.avance),
         empleado.avanceA === "" ? 0 : Number( empleado.avanceA),
+        empleado.avanceA === "" ? 0 : Number( empleado.avanceA),
+        fechaHoraActual(),
          empleado.cod_actividad,
         empleado.cod_avance,
         empleado.cod_lote,
@@ -1227,10 +1262,10 @@ export async function ActualizarAvances(listaEmpleadosAsentar: IAvanceEmpleado [
       avance, 
       avanceA,
       semanaActiva,
-      fecha
-    
+      fecha,
+      fechaRegistro
        )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         empleado.cod_lote,
         empleado.cod_nave,
@@ -1244,7 +1279,8 @@ export async function ActualizarAvances(listaEmpleadosAsentar: IAvanceEmpleado [
         Number(empleado.avanceA),
         empleado.semanaActiva,
         empleado.fecha,
-        
+        // Sin avance no hay hora de registro (queda al final de la lista).
+        Number(empleado.avanceA || 0) !== 0 ? fechaHoraActual() : null
       ]
     );
     console.log('Empleados guardado')
@@ -1326,11 +1362,15 @@ export async function SeleccionarAvancesEmpleadosASyncronizar(semanaActiva: stri
       A.fecha,
       A.estadoSincro,
       A.MensajeSincro,
+      A.fechaRegistro,
       B.Rendimiento_Aplic
       FROM tablaAvances A INNER JOIN listaActividadesPrincipales B 
       ON A.cod_actividad = B.cod_actividad AND A.cod_avance = B.cod_avance AND A.cod_lote = B.cod_lote
       
-     WHERE A.semanaActiva = ?  AND A.fecha = ?`, [semanaActiva, fecha], 
+     WHERE A.semanaActiva = ?  AND A.fecha = ?
+     -- Del registro mas antiguo al mas reciente; los que no tienen hora van al
+     -- final en el orden en que se guardaron.
+     ORDER BY A.fechaRegistro IS NULL, A.fechaRegistro ASC, A.id ASC`, [semanaActiva, fecha], 
   );
 
   

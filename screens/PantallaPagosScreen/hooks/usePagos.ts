@@ -5,6 +5,7 @@ import { obtenerJefesNave } from "../../../src/services/ObtenerJefesNave";
 import { ObtenerEmpleadosNomina } from "../../../src/services/ObtenerAvanceEmpleados";
 import { existeAvanceEnSQLite, insertarAvanceSQLite } from "../../../src/services/sqlite";
 import { ConsultarSemanaActiva } from "../../../src/utils/ObtenerSemanaActiva";
+import { compararFechaHora } from "../../../src/utils/GenerarFecha";
 import { avisarSinInternet, esSinInternet, hayInternet } from "../../../src/utils/conexion";
 import { useUser } from "../../../src/context/userContext";
 import { useEmployee } from "../../../src/context/QrContext";
@@ -83,7 +84,10 @@ export function usePagos() {
       // Un error del servidor (500, 401…) también llega con la lista vacía: no
       // debe confundirse con "no hay registros hoy".
       if (resp?.success === false) throw new Error(resp.mensaje);
-      const lista = resp?.avances ?? [];
+      // Del registro más antiguo al más reciente (la API ya los manda así; se
+      // ordena también aquí por si no). sort es estable: los empates conservan
+      // el orden del servidor.
+      const lista = [...(resp?.avances ?? [])].sort((x, y) => compararFechaHora(x.Fecha, y.Fecha));
       // Se marca cuáles ya están guardados en el teléfono (mismo avance).
       const conEstado: IAvanceUI[] = [];
       for (const a of lista) {

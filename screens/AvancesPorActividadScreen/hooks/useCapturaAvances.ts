@@ -52,7 +52,8 @@ export function useCapturaAvances(navigation: Navegacion, p: Parametros) {
         avance: String(emp.avance),
         avanceA: String(emp.avanceA),
         fecha,
-        semanaActiva: emp.semana
+        semanaActiva: emp.semana,
+        fechaRegistro: emp.fechaRegistro ?? null
       })) as IAvanceEmpleado[];
       setSemana(semanaActiva);
       setEmpleados(filas);

@@ -1,6 +1,7 @@
 import React from "react";
 import { View, Text, Image, StyleSheet } from "react-native";
 import { COLORES } from "../../../src/components/PantallaSeleccion";
+import { horaDe } from "../../../src/utils/GenerarFecha";
 import {
   ICONO_ACTIVIDAD,
   ICONO_EMPLEADO,
@@ -55,7 +56,10 @@ export default function SeccionActividad({ seccion }: { seccion: Seccion }) {
                 {capitalizarNombre(r.nom_empleado)}
               </Text>
               <View style={styles.filaEstado}>
-                <Text style={styles.codigoEmpleado}>{r.cod_empleado}</Text>
+                <Text style={styles.codigoEmpleado}>
+                  {r.cod_empleado}
+                  {horaDe(r.fechaRegistro) ? ` · ${horaDe(r.fechaRegistro)}` : ""}
+                </Text>
                 <View style={[styles.chip, { backgroundColor: color.fondo }]}>
                   <Text style={[styles.textoChip, { color: color.texto }]} numberOfLines={1}>
                     {textoEstado(r)}
