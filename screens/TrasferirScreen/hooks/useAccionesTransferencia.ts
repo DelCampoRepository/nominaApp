@@ -44,13 +44,20 @@ export function useAccionesTransferencia(): Record<ClaveOpcion, () => Promise<Re
         return { mensaje: "No hay avances registrados hoy", sinDatos: true };
       }
 
-      // Se agrupan los avances por lote y nave, como los espera el servidor.
-      const lotesMap = new Map<string, IEmpleadosParaAsentar>();
+      // Se envían en el orden del id (= hora de registro) y el servidor los
+      // guarda uno por uno en ese mismo orden. Cada bloque agrupa avances
+      // CONSECUTIVOS del mismo lote y nave: si se agruparan todos los de un
+      // lote/nave juntos, un registro tardío se adelantaría a otros más
+      // tempranos de otra nave. Un lote/nave puede repetirse en varios bloques.
+      const bloques: IEmpleadosParaAsentar[] = [];
       for (const empleado of lista) {
         const { cod_lote, cod_nave } = empleado;
-        const key = `${cod_lote}_${cod_nave}`;
-        if (!lotesMap.has(key)) lotesMap.set(key, { cod_lote, cod_nave, wDatos: [] });
-        lotesMap.get(key)!.wDatos.push({
+        let bloque = bloques[bloques.length - 1];
+        if (!bloque || bloque.cod_lote !== cod_lote || bloque.cod_nave !== cod_nave) {
+          bloque = { cod_lote, cod_nave, wDatos: [] };
+          bloques.push(bloque);
+        }
+        bloque.wDatos.push({
           cod_act: empleado.cod_actividad,
           cod_avn: empleado.cod_avance,
           cod_emp: empleado.cod_empleado,
@@ -64,7 +71,7 @@ export function useAccionesTransferencia(): Record<ClaveOpcion, () => Promise<Re
       }
 
       // GuardarAvancesEnDb devuelve [] si no se pudo sincronizar.
-      const res: any = await GuardarAvancesEnDb(Array.from(lotesMap.values()));
+      const res: any = await GuardarAvancesEnDb(bloques);
       if (!Array.isArray(res) || res.length === 0) {
         throw (await hayInternet())
           ? new ErrorPaso(
@@ -77,15 +84,30 @@ export function useAccionesTransferencia(): Record<ClaveOpcion, () => Promise<Re
             );
       }
 
+      // El servidor responde 200 aunque rechace avances: cada uno trae su
+      // estadoSincro (1 = guardado) y su mensaje. Antes se decía "registros
+      // enviados" sin revisarlo, aunque no se hubiera guardado ninguno.
+      let guardados = 0;
+      let rechazados = 0;
+      let primerMotivo = "";
       for (const item of res) {
         const { cod_lote, cod_nave, wDatos } = item ?? {};
         if (!Array.isArray(wDatos)) continue;
         for (const empleado of wDatos) {
           // El servidor puede devolver el campo en camelCase o PascalCase;
           // nunca se manda undefined a SQLite.
+          const estado = Number(empleado.estadoSincro ?? 0);
+          const mensaje = String(empleado.mensajeSincro ?? empleado.MensajeSincro ?? "");
+          if (estado === 1) {
+            guardados++;
+          } else {
+            rechazados++;
+            if (!primerMotivo && mensaje) primerMotivo = `${empleado.cod_emp}: ${mensaje}`;
+          }
           await ActualizarAvancesSincro({
-            estadoSincro: empleado.estadoSincro ?? 0,
-            MensajeSincro: empleado.mensajeSincro ?? empleado.MensajeSincro ?? "",
+            estadoSincro: estado,
+            // La interfaz lo declara number, pero en SQLite y en la API es texto.
+            MensajeSincro: mensaje as any,
             cod_actividad: empleado.cod_act,
             cod_avance: empleado.cod_avn,
             cod_lote,
@@ -96,8 +118,20 @@ export function useAccionesTransferencia(): Record<ClaveOpcion, () => Promise<Re
           } as IAvanceEmpleado);
         }
       }
+      if (guardados === 0) {
+        throw new ErrorPaso(
+          `El servidor no guardó ${rechazados === 1 ? "el avance" : `ninguno de los ${rechazados} avances`}.`,
+          primerMotivo
+            ? `Motivo: ${primerMotivo}. Revise el detalle en Reporte de avances.`
+            : "Revise el detalle en Reporte de avances."
+        );
+      }
+      const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
       return {
-        mensaje: `${lista.length} ${lista.length === 1 ? "registro enviado" : "registros enviados"}`
+        mensaje:
+          rechazados === 0
+            ? plural(guardados, "registro guardado", "registros guardados")
+            : `${plural(guardados, "guardado", "guardados")}, ${plural(rechazados, "rechazado", "rechazados")} (ver Reporte)`
       };
     },
 

@@ -334,6 +334,29 @@ export async function guardarListajefesNave(
 
 
 
+// Renumera los ids de tablaAvances para que sigan el orden de la fecha y hora
+// del registro (fechaRegistro): el registro más temprano queda con el id menor.
+// Así, si se descargan primero los avances de la tarde (p. ej. de un jefe de
+// nave) y después los de la mañana (de otro), los de la mañana pasan a tener
+// los ids menores. Los registros sin hora quedan al final; los empates
+// conservan su orden anterior.
+export async function reordenarIdsAvances(database: SQLite.SQLiteDatabase) {
+  // Primero se pasan a negativos para que los ids nuevos no choquen con los
+  // actuales mientras se reasignan.
+  await database.runAsync(`UPDATE tablaAvances SET id = -id`);
+  await database.runAsync(
+    `WITH orden AS (
+       SELECT id AS viejo,
+              ROW_NUMBER() OVER (
+                ORDER BY fechaRegistro IS NULL, fechaRegistro ASC, id DESC
+              ) AS nuevo
+       FROM tablaAvances
+     )
+     UPDATE tablaAvances
+        SET id = (SELECT nuevo FROM orden WHERE orden.viejo = tablaAvances.id)`
+  );
+}
+
 // Fecha y hora con la que la API manda el avance ("2026-03-19 16:41:55.803").
 // Si solo trae el día, no hay hora con la cual ordenar: se guarda null.
 export function fechaHoraDeRegistro(fecha: string | null | undefined): string | null {
@@ -404,6 +427,9 @@ export async function insertarAvanceSQLite  (
     
     );
   }
+  // Dentro de la misma transacción: los ids quedan en el orden de la hora
+  // de registro, aunque los avances se hayan descargado en otro orden.
+  await reordenarIdsAvances(database);
   });
   return true;
   }catch(error : any)
@@ -775,7 +801,8 @@ export async function SeleccionarEmpleadosCapturados(  codLote: string, codNave:
           IFNULL(B.des_actividad,'') AS des_actividad,
           IFNULL(B.avance, 0 )AS avance,
           IFNULL(B.avanceA, 0)AS avanceA,
-          B.fechaRegistro AS fechaRegistro
+          B.fechaRegistro AS fechaRegistro,
+          B.id AS idAvance
           FROM tablaEmpleadosSeleccionados A
           LEFT JOIN tablaAvances AS B ON
           A.cod_lote = B.cod_lote AND
@@ -807,7 +834,8 @@ export async function SeleccionarEmpleadosCapturados(  codLote: string, codNave:
           IFNULL(B.des_actividad, '') AS des_actividad,
           IFNULL(B.avance, 0) AS avance,
           IFNULL(B.avanceA, 0) AS avanceA,
-          B.fechaRegistro AS fechaRegistro
+          B.fechaRegistro AS fechaRegistro,
+          B.id AS idAvance
           FROM tablaAvances B
           WHERE
             B.cod_lote = ? AND
@@ -825,10 +853,10 @@ export async function SeleccionarEmpleadosCapturados(  codLote: string, codNave:
                 AND A.semana = B.semanaActiva
             )
           )
-          -- Del avance registrado mas antiguo al mas reciente. Los que aun no
-          -- tienen hora (sin avance) van al final: primero los asentados en su
-          -- orden de registro y despues los demas.
-          ORDER BY fechaRegistro IS NULL, fechaRegistro ASC, grupo ASC, orden ASC
+          -- Por el id del avance (reordenarIdsAvances lo deja en el orden de la
+          -- hora de registro). Los empleados sin avance van al final: primero
+          -- los asentados en su orden de registro y despues los demas.
+          ORDER BY idAvance IS NULL, idAvance ASC, grupo ASC, orden ASC
           `,
           [
             codAct, codAvance, fecha, codLote, codNave, fecha, semana,
@@ -1289,6 +1317,8 @@ export async function ActualizarAvances(listaEmpleadosAsentar: IAvanceEmpleado [
   }
   
    
+    // Los ids quedan en el orden de la hora de registro.
+    await reordenarIdsAvances(database);
     return true;
   }catch(error: any)
   {
@@ -1368,9 +1398,9 @@ export async function SeleccionarAvancesEmpleadosASyncronizar(semanaActiva: stri
       ON A.cod_actividad = B.cod_actividad AND A.cod_avance = B.cod_avance AND A.cod_lote = B.cod_lote
       
      WHERE A.semanaActiva = ?  AND A.fecha = ?
-     -- Del registro mas antiguo al mas reciente; los que no tienen hora van al
-     -- final en el orden en que se guardaron.
-     ORDER BY A.fechaRegistro IS NULL, A.fechaRegistro ASC, A.id ASC`, [semanaActiva, fecha], 
+     -- Por id: reordenarIdsAvances deja los ids en el orden de la hora de
+     -- registro (del mas antiguo al mas reciente; sin hora al final).
+     ORDER BY A.id ASC`, [semanaActiva, fecha], 
   );
 
   
